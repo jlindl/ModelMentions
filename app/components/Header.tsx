@@ -10,10 +10,20 @@ export function Header() {
 
     return (
         <header className="fixed top-0 left-0 right-0 z-50 border-b border-white/10 bg-brand-black/80 backdrop-blur-md">
-            <div className="container mx-auto px-6 h-20 flex items-center justify-between">
+            <div className="container mx-auto px-6 h-20 flex items-center justify-between relative z-10">
                 {/* Logo */}
-                <Link href="/" className="text-2xl font-bold tracking-tighter text-white">
-                    Model<span className="text-brand-yellow">Mentions</span>
+                <Link href="/" className="flex items-center gap-3">
+                    <img
+                        src="/MMLOGO.png"
+                        alt="ModelMentions"
+                        style={{
+                            filter: 'drop-shadow(0 0 20px rgba(255,215,0,1)) drop-shadow(0 0 40px rgba(255,215,0,0.8)) drop-shadow(0 0 60px rgba(255,215,0,0.6))'
+                        }}
+                        className="h-20 w-auto translate-y-2"
+                    />
+                    <span className="text-2xl font-bold tracking-tighter text-white hidden sm:block">
+                        Model<span className="text-brand-yellow">Mentions</span>
+                    </span>
                 </Link>
 
                 {/* Desktop Nav */}
