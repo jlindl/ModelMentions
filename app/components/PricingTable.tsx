@@ -3,13 +3,24 @@
 import { Check, X, Loader2 } from "lucide-react";
 import { Button } from "./Button";
 import { useState } from "react";
+import { useRouter } from "next/navigation";
+import { createClient } from "../utils/supabase/client";
 
 export function PricingTable() {
     const [loading, setLoading] = useState<string | null>(null);
+    const router = useRouter();
+    const supabase = createClient();
 
     const handleCheckout = async (planName: string, priceId: string) => {
         setLoading(planName);
         try {
+            // Check if user is logged in
+            const { data: { user } } = await supabase.auth.getUser();
+
+            if (!user) {
+                router.push('/login?redirect=/pricing');
+                return;
+            }
             const res = await fetch('/api/checkout', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
