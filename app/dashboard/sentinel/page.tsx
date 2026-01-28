@@ -45,7 +45,7 @@ export default function SentinelPage() {
                 <Button onClick={() => router.push('/dashboard')}>
                     Return to Dashboard
                 </Button>
-                <Button variant="outline" onClick={() => window.open('https://www.modelmentions.co.uk', '_blank')}>
+                <Button variant="secondary" onClick={() => window.open('https://www.modelmentions.co.uk', '_blank')}>
                     View Roadmap
                 </Button>
             </div>
