@@ -64,7 +64,7 @@ export default function DashboardLayout({
     const navItems = [
         { name: 'Overview', href: '/dashboard/overview', icon: BarChart3 },
         { name: 'Insights', href: '/dashboard/insights', icon: Zap },
-        { name: 'Sentinel', href: '/dashboard/sentinel', icon: Shield }, // Retention Feature
+        { name: 'Sentinel', href: '/dashboard/sentinel', icon: Shield, disabled: true, badge: 'Soon' }, // Retention Feature
         { name: 'Battlecard', href: '/dashboard/compare', icon: Swords },
         { name: 'Live Feed', href: '/dashboard', icon: LayoutDashboard },
         { name: 'New Scan', href: '/dashboard/scan', icon: Search },
@@ -93,8 +93,33 @@ export default function DashboardLayout({
                 <div className="px-3 mb-6">
                     <p className="text-[10px] font-bold text-gray-500 uppercase tracking-[0.2em] pl-4 mb-3">Dashboard</p>
                     <nav className="space-y-1">
-                        {navItems.slice(0, 2).map((item) => {
+                        {navItems.slice(0, 3).map((item) => {
                             const isActive = pathname === item.href;
+                            const isSentinel = item.name === 'Sentinel';
+
+                            const content = (
+                                <>
+                                    <item.icon size={18} className={`transition-colors ${isActive ? 'text-brand-yellow drop-shadow-[0_0_8px_rgba(255,215,0,0.5)]' : 'text-gray-500 group-hover:text-gray-300'}`} />
+                                    <span>{item.name}</span>
+                                    {isSentinel && (
+                                        <span className="ml-auto text-[10px] bg-brand-yellow/10 text-brand-yellow px-1.5 py-0.5 rounded-md font-bold border border-brand-yellow/20">
+                                            SOON
+                                        </span>
+                                    )}
+                                </>
+                            );
+
+                            if (isSentinel) {
+                                return (
+                                    <div
+                                        key={item.name}
+                                        className="relative flex items-center gap-3 px-4 py-2.5 text-sm font-medium rounded-lg text-gray-600 cursor-not-allowed opacity-60"
+                                    >
+                                        {content}
+                                    </div>
+                                );
+                            }
+
                             return (
                                 <Link
                                     key={item.name}
@@ -104,8 +129,7 @@ export default function DashboardLayout({
                                         : 'text-gray-400 hover:text-white hover:bg-white/5 border-l-2 border-transparent'
                                         }`}
                                 >
-                                    <item.icon size={18} className={`transition-colors ${isActive ? 'text-brand-yellow drop-shadow-[0_0_8px_rgba(255,215,0,0.5)]' : 'text-gray-500 group-hover:text-gray-300'}`} />
-                                    <span>{item.name}</span>
+                                    {content}
                                 </Link>
                             );
                         })}
@@ -115,7 +139,7 @@ export default function DashboardLayout({
                 <div className="px-3">
                     <p className="text-[10px] font-bold text-gray-500 uppercase tracking-[0.2em] pl-4 mb-3 mt-6">Analysis</p>
                     <nav className="space-y-1">
-                        {navItems.slice(2).map((item) => {
+                        {navItems.slice(3).map((item) => {
                             const isActive = pathname === item.href;
                             return (
                                 <Link
