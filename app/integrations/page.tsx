@@ -9,7 +9,7 @@ export default function IntegrationsPage() {
                     Seamless <span className="text-brand-yellow">Integrations</span>
                 </h1>
                 <p className="text-xl text-gray-400 max-w-2xl mx-auto mb-12">
-                    Connect ModelMentions with your existing workflow. Support for Slack, Discord, and Linear is coming soon.
+                    Connect ModelMentions with your existing <strong>marketing</strong> workflow. Support for Slack, Discord, and Linear is coming soon.
                 </p>
                 <div className="flex justify-center gap-4">
                     <Link href="/auth">

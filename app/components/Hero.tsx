@@ -1,7 +1,7 @@
 import Image from 'next/image';
 import Link from 'next/link';
 import { Button } from './Button';
-import { ArrowRight, BarChart3, Globe2, Zap } from 'lucide-react';
+import { ArrowRight, BarChart3, Globe2, Zap, TrendingUp, AlertCircle } from 'lucide-react';
 
 export function Hero() {
     return (
@@ -32,12 +32,12 @@ export function Hero() {
                         Live Visibility Tracking
                     </div>
 
-                    <h1 className="text-6xl lg:text-8xl font-bold tracking-tighter text-white leading-[1] max-w-4xl">
-                        Ship faster with <span className="text-transparent bg-clip-text bg-gradient-to-r from-brand-yellow via-yellow-200 to-brand-yellow animate-pulse">Metrics</span> for modern AI teams
+                    <h1 className="text-6xl lg:text-8xl font-bold tracking-tighter text-white leading-[1] max-w-5xl">
+                        The Future of <span className="text-transparent bg-clip-text bg-gradient-to-r from-brand-yellow via-yellow-200 to-brand-yellow">SEO Services</span> & AI Optimization
                     </h1>
 
                     <p className="text-xl text-gray-400 max-w-2xl leading-relaxed">
-                        The first comprehensive analytics platform for the Large Language Model ecosystem. Track, Analyze, and Optimize your brand's AI presence with real-time data.
+                        The first comprehensive analytics platform for the modern <strong>Marketing</strong> ecosystem. Track, Analyze, and Optimize your brand's AI presence with real-time data to master <strong>AI Website Optimization</strong>.
                     </p>
 
                     <div className="flex flex-col sm:flex-row gap-4 pt-4">
@@ -67,33 +67,79 @@ export function Hero() {
             or leave this column empty to let the background shine through. 
             For Neon style, typically the right side shows code snippets or abstract visuals. 
             Let's add a code-snippet-like floating element. */}
-                <div className="hidden lg:block lg:col-span-4 relative h-[400px]">
-                    <div className="absolute right-0 top-1/2 -translate-y-1/2 w-full bg-black/80 backdrop-blur-xl border border-white/10 rounded-xl p-6 shadow-2xl skew-y-[-2deg] hover:skew-y-0 transition-transform duration-500">
-                        <div className="flex items-center gap-2 mb-4 border-b border-white/5 pb-4">
-                            <div className="w-3 h-3 rounded-full bg-red-500/50" />
-                            <div className="w-3 h-3 rounded-full bg-yellow-500/50" />
-                            <div className="w-3 h-3 rounded-full bg-green-500/50" />
-                            <div className="ml-auto text-xs text-gray-500 font-mono">analytics.ts</div>
-                        </div>
-                        <div className="space-y-2 font-mono text-sm">
-                            <div className="flex gap-2">
-                                <span className="text-purple-400">const</span>
-                                <span className="text-blue-400">metrics</span>
-                                <span className="text-white">=</span>
-                                <span className="text-purple-400">await</span>
-                                <span className="text-yellow-400">trackMentions</span>
-                                <span className="text-gray-400">({'('}</span>
+                <div className="hidden lg:block lg:col-span-4 relative h-[400px] animate-fade-in-up delay-200">
+                    <div className="absolute right-0 top-1/2 -translate-y-1/2 w-full bg-black/80 backdrop-blur-xl border border-white/10 rounded-2xl p-6 shadow-2xl skew-y-[-2deg] hover:skew-y-0 transition-transform duration-500 group">
+
+                        {/* Header */}
+                        <div className="flex items-center justify-between mb-6 border-b border-white/5 pb-4">
+                            <div>
+                                <h3 className="text-white font-bold">Share of Voice</h3>
+                                <p className="text-xs text-gray-400">Real-time Model Visibility</p>
                             </div>
-                            <div className="pl-4 text-green-400">'GPT-4',</div>
-                            <div className="pl-4 text-green-400">'Claude-3',</div>
-                            <div className="pl-4 text-green-400">'Gemini-Pro'</div>
-                            <div className="text-gray-400">{')'});</div>
-                            <br />
-                            <div className="text-gray-500">// Result:</div>
-                            <div className="text-brand-yellow">
-                                {'{'} distinct_mentions: 842, sentiment: 0.92 {'}'}
+                            <div className="w-2 h-2 rounded-full bg-green-500 animate-pulse" />
+                        </div>
+
+                        {/* List Items */}
+                        <div className="space-y-4">
+                            {/* Item 1 */}
+                            <div className="flex items-center justify-between p-3 rounded-xl bg-white/5 border border-white/5 hover:border-brand-yellow/30 transition-colors">
+                                <div className="flex items-center gap-3">
+                                    <div className="w-8 h-8 rounded-lg bg-green-500/20 text-green-400 flex items-center justify-center font-bold text-xs">O</div>
+                                    <div>
+                                        <div className="text-sm font-medium text-white">ChatGPT-4</div>
+                                        <div className="text-xs text-gray-500">Rank #1</div>
+                                    </div>
+                                </div>
+                                <div className="text-right">
+                                    <div className="text-sm font-bold text-green-400">94%</div>
+                                    <div className="flex items-center gap-1 text-[10px] text-gray-400">
+                                        <TrendingUp size={10} className="text-green-500" /> +12%
+                                    </div>
+                                </div>
+                            </div>
+
+                            {/* Item 2 */}
+                            <div className="flex items-center justify-between p-3 rounded-xl bg-white/5 border border-white/5 hover:border-brand-yellow/30 transition-colors">
+                                <div className="flex items-center gap-3">
+                                    <div className="w-8 h-8 rounded-lg bg-blue-500/20 text-blue-400 flex items-center justify-center font-bold text-xs">P</div>
+                                    <div>
+                                        <div className="text-sm font-medium text-white">Perplexity</div>
+                                        <div className="text-xs text-gray-500">Rank #3</div>
+                                    </div>
+                                </div>
+                                <div className="text-right">
+                                    <div className="text-sm font-bold text-yellow-400">58%</div>
+                                    <div className="flex items-center gap-1 text-[10px] text-gray-400">
+                                        Optimization Needed
+                                    </div>
+                                </div>
+                            </div>
+
+                            {/* Item 3 - Critical */}
+                            <div className="flex items-center justify-between p-3 rounded-xl bg-red-500/5 border border-red-500/20 hover:bg-red-500/10 transition-colors">
+                                <div className="flex items-center gap-3">
+                                    <div className="w-8 h-8 rounded-lg bg-red-500/20 text-red-400 flex items-center justify-center font-bold text-xs">G</div>
+                                    <div>
+                                        <div className="text-sm font-medium text-white">Gemini Pro</div>
+                                        <div className="text-xs text-red-400">Not Ranking</div>
+                                    </div>
+                                </div>
+                                <div className="text-right">
+                                    <div className="text-sm font-bold text-red-500">0%</div>
+                                    <div className="flex items-center gap-1 text-[10px] text-red-400 font-medium">
+                                        <AlertCircle size={10} /> Critical Fix
+                                    </div>
+                                </div>
                             </div>
                         </div>
+
+                        {/* Footer Action */}
+                        <div className="mt-6 pt-4 border-t border-white/5 text-center">
+                            <div className="inline-flex items-center gap-2 text-xs text-brand-yellow font-medium bg-brand-yellow/10 px-3 py-1.5 rounded-full border border-brand-yellow/20">
+                                <Zap size={12} /> Auto-Optimize Strategy Ready
+                            </div>
+                        </div>
+
                     </div>
                 </div>
             </div>

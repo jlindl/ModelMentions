@@ -16,11 +16,11 @@ export default function FeaturesPage() {
 
                 <div className="container mx-auto px-6 text-center relative z-10">
                     <h1 className="text-5xl md:text-7xl font-bold mb-8 tracking-tight">
-                        Complete <span className="text-brand-yellow">Visibility</span>
+                        Complete <span className="text-brand-yellow">AI Website Optimization</span>
                     </h1>
                     <p className="text-xl text-gray-400 max-w-2xl mx-auto leading-relaxed">
-                        Explore the most advanced telemetry system for the Generative Web.
-                        Track your brand across every major model and search engine.
+                        Explore the most advanced <strong>SEO services</strong> telemetry system for the Generative Web.
+                        Track your brand's <strong>marketing</strong> performance across every major model and search engine.
                     </p>
                 </div>
             </section>

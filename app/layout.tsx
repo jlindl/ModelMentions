@@ -13,8 +13,9 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "ModelMentions | Track Brand Visibility in AI",
-  description: "Analytics and tracking for brand mentions across Large Language Models.",
+  title: "ModelMentions | AI Website Optimization & SEO Services for LLMs",
+  description: "The comprehensive SEO services platform for the AI era. Track marketing performance, optimize brand visibility, and master AI website optimization across ChatGPT, Claude, and Gemini.",
+  keywords: ["SEO services", "marketing", "AI website optimization", "LLM analytics", "brand visibility", "generative engine optimization"],
 };
 
 export default function RootLayout({

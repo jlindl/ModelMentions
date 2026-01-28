@@ -11,10 +11,10 @@ export function Features() {
                 <div className="flex flex-col md:flex-row justify-between items-end mb-16 gap-6">
                     <div className="max-w-xl">
                         <h2 className="text-3xl md:text-5xl font-bold text-white mb-6 leading-tight">
-                            Intelligence for the <span className="text-brand-yellow">Post-Search</span> World
+                            Next-Gen <span className="text-brand-yellow">Marketing Intelligence</span>
                         </h2>
                         <p className="text-gray-400 text-lg">
-                            Standard SEO tools can't see inside LLMs. We provide the first purpose-built telemetry system for the generative web.
+                            Standard <strong>SEO services</strong> can't see inside LLMs. We provide the first purpose-built telemetry system for <strong>AI website optimization</strong> in the generative web.
                         </p>
                     </div>
                     <div>
@@ -107,8 +107,8 @@ export function Features() {
                             <span className="bg-green-500/20 text-green-400 text-xs font-bold px-3 py-1 rounded-full border border-green-500/20">+12%</span>
                         </div>
 
-                        <h3 className="text-xl font-bold text-white mb-2">Sentiment Analysis</h3>
-                        <p className="text-gray-400 text-sm mb-6">Track how AI "feels" about your brand.</p>
+                        <h3 className="text-xl font-bold text-white mb-2">Marketing Sentiment Analysis</h3>
+                        <p className="text-gray-400 text-sm mb-6">Track how AI "feels" about your brand to guide your marketing strategy.</p>
 
                         {/* Visual: Gauge/Chart */}
                         <div className="mt-auto flex items-end justify-between gap-2 h-32">
