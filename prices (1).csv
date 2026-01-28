@@ -1,0 +1,4 @@
+Price ID,Product ID,Product Name,Product Statement Descriptor,Product Tax Code,Description,Created (UTC),Amount,Currency,Interval,Interval Count,Usage Type,Aggregate Usage,Billing Scheme,Trial Period Days,Tax Behavior
+price_1SuYztCYviF138kN0jEsTaT1,prod_TsJd8cqgbWGEtt,Scale,,,,2026-01-28 13:41,19.00,gbp,month,1,licensed,,per_unit,,unspecified
+price_1SuYzoCYviF138kNLkRcGZrU,prod_TsJd7nxDnGGJTn,Growth,,,,2026-01-28 13:41,49.00,gbp,month,1,licensed,,per_unit,,unspecified
+price_1SuYzlCYviF138kNHcDzfLuX,prod_TsJdpZTLPAYXID,Power,,,,2026-01-28 13:41,99.00,gbp,month,1,licensed,,per_unit,,unspecified

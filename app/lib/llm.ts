@@ -23,7 +23,7 @@ const API_KEY = process.env.OPENAI_API_KEY || process.env.OpenRouter_API_KEY;
 const BASE_URL = process.env.LLM_BASE_URL || (process.env.OpenRouter_API_KEY ? 'https://openrouter.ai/api/v1' : 'https://api.openai.com/v1');
 
 // Cache Client (Service Role for backend ops) - Lazy Init
-function getSupabaseAdmin() {
+export function getSupabaseAdmin() {
     return createClient(
         process.env.NEXT_PUBLIC_SUPABASE_URL!,
         process.env.SUPABASE_SERVICE_ROLE_KEY!

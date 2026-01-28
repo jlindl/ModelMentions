@@ -159,6 +159,28 @@ export default function SettingsPage() {
         });
     };
 
+    const handleUpgrade = async (planName: string, priceId: string) => {
+        setLoading(true); // Using loading override or create separate
+        setMessage(null);
+        try {
+            const res = await fetch('/api/checkout', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ priceId, planName }),
+            });
+            const data = await res.json();
+            if (data.url) {
+                window.location.href = data.url;
+            } else {
+                setMessage({ type: 'error', text: 'Checkout initialization failed: ' + (data.error || 'Unknown error') });
+                setLoading(false);
+            }
+        } catch (err) {
+            setMessage({ type: 'error', text: 'Checkout error.' });
+            setLoading(false);
+        }
+    };
+
     if (loading) {
         return <div className="p-8 text-gray-400 flex items-center gap-2"><Loader2 className="animate-spin" /> Loading settings...</div>;
     }
@@ -448,7 +470,11 @@ export default function SettingsPage() {
                                         <li className="flex items-center gap-2"><Check size={14} className="text-green-500" /> Up to 15 AI Models</li>
                                         <li className="flex items-center gap-2"><Check size={14} className="text-green-500" /> Priority Processing</li>
                                     </ul>
-                                    <Button disabled={userPlan === 'pro'} className="w-full">
+                                    <Button
+                                        disabled={userPlan === 'pro'}
+                                        onClick={() => handleUpgrade('pro', process.env.NEXT_PUBLIC_STRIPE_PRICE_PRO || 'price_placeholder_pro')}
+                                        className="w-full"
+                                    >
                                         {userPlan === 'pro' ? 'Active Plan' : 'Upgrade to Scale'}
                                     </Button>
                                 </div>
@@ -463,7 +489,11 @@ export default function SettingsPage() {
                                         <li className="flex items-center gap-2"><Check size={14} className="text-green-500" /> Up to 50 AI Models</li>
                                         <li className="flex items-center gap-2"><Check size={14} className="text-green-500" /> All Model Providers</li>
                                     </ul>
-                                    <Button disabled={userPlan === 'premium'} className="w-full shadow-[0_0_15px_rgba(255,215,0,0.2)]">
+                                    <Button
+                                        disabled={userPlan === 'premium'}
+                                        onClick={() => handleUpgrade('premium', process.env.NEXT_PUBLIC_STRIPE_PRICE_PREMIUM || 'price_placeholder_premium')}
+                                        className="w-full shadow-[0_0_15px_rgba(255,215,0,0.2)]"
+                                    >
                                         {userPlan === 'premium' ? 'Active Plan' : 'Upgrade to Growth'}
                                     </Button>
                                 </div>
@@ -478,7 +508,11 @@ export default function SettingsPage() {
                                         <li className="flex items-center gap-2"><Check size={14} className="text-brand-yellow" /> Up to 100 AI Models</li>
                                         <li className="flex items-center gap-2"><Check size={14} className="text-brand-yellow" /> 24/7 Priority Support</li>
                                     </ul>
-                                    <Button disabled={userPlan === 'ultra'} className="w-full shadow-[0_0_15px_rgba(255,215,0,0.2)]">
+                                    <Button
+                                        disabled={userPlan === 'ultra'}
+                                        onClick={() => handleUpgrade('ultra', process.env.NEXT_PUBLIC_STRIPE_PRICE_ULTRA || 'price_placeholder_ultra')}
+                                        className="w-full shadow-[0_0_15px_rgba(255,215,0,0.2)]"
+                                    >
                                         {userPlan === 'ultra' ? 'Active Plan' : 'Upgrade to Power'}
                                     </Button>
                                 </div>

@@ -1,15 +1,42 @@
 "use client";
 
-import { Check, X } from "lucide-react";
+import { Check, X, Loader2 } from "lucide-react";
 import { Button } from "./Button";
+import { useState } from "react";
 
 export function PricingTable() {
+    const [loading, setLoading] = useState<string | null>(null);
+
+    const handleCheckout = async (planName: string, priceId: string) => {
+        setLoading(planName);
+        try {
+            const res = await fetch('/api/checkout', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ priceId, planName }),
+            });
+            const data = await res.json();
+            if (data.url) {
+                window.location.href = data.url;
+            } else {
+                alert('Checkout failed: ' + (data.error || 'Unknown error'));
+                setLoading(null);
+            }
+        } catch (err) {
+            console.error(err);
+            alert('Checkout error. Please try again.');
+            setLoading(null);
+        }
+    };
+
     const plans = [
         {
             name: "Scale",
             price: "$19",
             period: "/month",
             description: "Essential visibility for emerging brands.",
+            priceId: process.env.NEXT_PUBLIC_STRIPE_PRICE_PRO || 'price_placeholder_pro',
+            id: 'pro',
             features: [
                 "10 Credits Monthly",
                 "Up to 15 AI Models",
@@ -32,6 +59,8 @@ export function PricingTable() {
             price: "$49",
             period: "/month",
             description: "Comprehensive intelligence for scaling teams.",
+            priceId: process.env.NEXT_PUBLIC_STRIPE_PRICE_PREMIUM || 'price_placeholder_premium',
+            id: 'premium',
             features: [
                 "30 Credits Monthly",
                 "Up to 50 AI Models",
@@ -55,6 +84,8 @@ export function PricingTable() {
             price: "$99",
             period: "/month",
             description: "Full-spectrum dominance for global organizations.",
+            priceId: process.env.NEXT_PUBLIC_STRIPE_PRICE_ULTRA || 'price_placeholder_ultra',
+            id: 'ultra',
             features: [
                 "100 Credits Monthly",
                 "Up to 100 AI Models",
@@ -126,8 +157,10 @@ export function PricingTable() {
                             <Button
                                 variant={plan.variant as any}
                                 className={`w-full justify-center ${plan.popular ? 'bg-brand-yellow hover:bg-brand-yellow-hover text-brand-black' : ''}`}
+                                onClick={() => handleCheckout(plan.id, plan.priceId)}
+                                disabled={loading !== null}
                             >
-                                {plan.cta}
+                                {loading === plan.id ? <><Loader2 className="animate-spin mr-2" /> Processing...</> : plan.cta}
                             </Button>
                         </div>
                     ))}
