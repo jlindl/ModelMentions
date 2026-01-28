@@ -34,6 +34,9 @@ export function Header() {
                     <Link href="/how-it-works" className="text-sm font-medium text-gray-400 hover:text-brand-yellow transition-colors">
                         How it works
                     </Link>
+                    <Link href="/blog" className="text-sm font-medium text-gray-400 hover:text-brand-yellow transition-colors">
+                        Blog
+                    </Link>
                     <Link href="/pricing" className="text-sm font-medium text-gray-400 hover:text-brand-yellow transition-colors">
                         Pricing
                     </Link>
@@ -61,6 +64,9 @@ export function Header() {
                     </Link>
                     <Link href="/how-it-works" className="text-base font-medium text-gray-400 hover:text-brand-yellow" onClick={() => setIsMenuOpen(false)}>
                         How it works
+                    </Link>
+                    <Link href="/blog" className="text-base font-medium text-gray-400 hover:text-brand-yellow" onClick={() => setIsMenuOpen(false)}>
+                        Blog
                     </Link>
                     <Link href="/pricing" className="text-base font-medium text-gray-400 hover:text-brand-yellow" onClick={() => setIsMenuOpen(false)}>
                         Pricing
