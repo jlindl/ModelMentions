@@ -19,7 +19,7 @@ export default function HowItWorksPage() {
                         Anatomy of <span className="text-brand-yellow">AI Tracking</span>
                     </h1>
                     <p className="text-xl text-gray-400 max-w-2xl mx-auto leading-relaxed mb-12">
-                        We've built the world's first active telemetry network for the generative web. See how we turn black-box model outputs into actionable data.
+                        We&apos;ve built the world&apos;s first active telemetry network for the generative web. See how we turn black-box model outputs into actionable data.
                     </p>
 
                     <button className="bg-white/10 hover:bg-white/20 text-white px-8 py-4 rounded-full font-medium transition-all backdrop-blur-sm border border-white/5 flex items-center gap-2 mx-auto">

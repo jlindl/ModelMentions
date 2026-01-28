@@ -1,62 +1,8 @@
 import { createClient } from '../../utils/supabase/server';
 import { NextResponse } from 'next/server';
-import { callLLM } from '../../lib/llm';
-
-// Helper to analyze the response (can be moved to a separate function/file later)
-function analyzeResponse(text: string, brandName: string) {
-    const lowerText = text.toLowerCase();
-    const lowerBrand = brandName.toLowerCase();
-
-    // 1. Mention Check
-    const isMentioned = lowerText.includes(lowerBrand);
-
-    // 2. Rank Extraction (heuristic)
-    // Look for "1. BrandName" or "- BrandName" patterns
-    let rank = null;
-    if (isMentioned) {
-        const lines = text.split('\n');
-        for (let i = 0; i < lines.length; i++) {
-            if (lines[i].toLowerCase().includes(lowerBrand)) {
-                // Try to extract number at start of line "1." or "1)"
-                const match = lines[i].match(/^(\d+)[\.)]/);
-                if (match) {
-                    rank = parseInt(match[1]);
-                    break;
-                }
-            }
-        }
-    }
-
-    // 3. Sentiment Analysis (Basic Keyword Heuristic for now, or use another LLM call)
-    // Positive words: best, great, powerful, top, leading
-    // Negative words: slow, expensive, buggy, limited
-    let sentiment = 0;
-    if (isMentioned) {
-        const positive = ['best', 'great', 'excellent', 'top', 'robust', 'powerful', 'leading', 'recommend'];
-        const negative = ['slow', 'expensive', 'bad', 'limited', 'buggy', 'hard', 'poor'];
-
-        let score = 0;
-        positive.forEach(w => { if (lowerText.includes(w)) score += 0.2; });
-        negative.forEach(w => { if (lowerText.includes(w)) score -= 0.25; });
-
-        // Clamp between -1 and 1
-        sentiment = Math.max(-1, Math.min(1, score));
-        // Bias towards positive if likely neutral list
-        if (score === 0) sentiment = 0.1;
-    }
-
-    return { isMentioned, rank, sentiment };
-}
-
 import { generatePrompts } from '../../lib/prompt-generator';
-
-// Plan Limits in USD
-const PLAN_LIMITS: Record<string, number> = {
-    'free': 0.25,
-    'pro': 5.00,
-    'premium': 15.00,
-    'ultra': 50.00
-};
+import { StartScanSchema } from '../../lib/validators';
+import { z } from 'zod';
 
 export async function POST(request: Request) {
     const supabase = await createClient();
@@ -67,9 +13,15 @@ export async function POST(request: Request) {
     }
 
     try {
-        const { includeCompetitors } = await request.json().catch(() => ({}));
+        const body = await request.json().catch(() => ({}));
 
-        // 1. Fetch User Profile
+        // 0. Check & Reset Billing Cycle (Using existing RPC)
+        await supabase.rpc('check_and_reset_usage', { user_id: user.id });
+
+        // 1. Validation
+        const { includeCompetitors } = await StartScanSchema.parseAsync(body);
+
+        // 2. Fetch User Profile & Plan
         let { data: profile, error: profileError } = await supabase
             .from('profiles')
             .select('*')
@@ -80,20 +32,38 @@ export async function POST(request: Request) {
             throw new Error('User profile not found. Please complete settings first.');
         }
 
-        // Check & Reset Monthly Usage
-        const { error: rpcError } = await supabase.rpc('check_and_reset_usage', { user_id: user.id });
-        if (!rpcError) {
-            const { data: refined } = await supabase.from('profiles').select('*').eq('id', user.id).single();
-            if (refined) profile = refined;
+        const userPlanId = profile.plan || 'free';
+        const { data: planData } = await supabase
+            .from('plans')
+            .select('monthly_credit_limit_usd, features, requests_per_hour')
+            .eq('id', userPlanId)
+            .single();
+
+        const limit = planData?.monthly_credit_limit_usd || 0.25;
+        const planFeatures = planData?.features || [];
+        const hourlyLimit = planData?.requests_per_hour || 10;
+
+        // 3. Rate Limiting (DB-based)
+        const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000).toISOString();
+        const { count: recentRuns, error: rateError } = await supabase
+            .from('test_runs')
+            .select('*', { count: 'exact', head: true })
+            .eq('user_id', user.id)
+            .gte('created_at', oneHourAgo);
+
+        if (rateError) console.error('Rate limit check failed', rateError);
+
+        if ((recentRuns || 0) >= hourlyLimit) {
+            return NextResponse.json({
+                error: `Rate limit exceeded. Your plan allows ${hourlyLimit} scans per hour.`
+            }, { status: 429 });
         }
 
-        // 2. Check Usage Limits
-        const userPlan = profile.plan || 'free';
+        // Check Usage Limits
         const currentUsage = profile.credits_used || 0;
-        const limit = PLAN_LIMITS[userPlan] || 0.25;
 
         // Validating Premium Feature
-        if (includeCompetitors && (userPlan === 'free' || userPlan === 'pro')) {
+        if (includeCompetitors && !planFeatures.includes('competitor_analysis')) {
             return NextResponse.json({ error: 'Competitor Scan is a Premium/Ultra feature.' }, { status: 403 });
         }
 
@@ -111,117 +81,62 @@ export async function POST(request: Request) {
         if (runError) throw runError;
 
         // 4. Models to Query
-        let models: string[] = profile.selected_models || [
-            'openai/gpt-4o', 'google/gemini-1.5-pro', 'anthropic/claude-3-5-sonnet', 'perplexity/sonar-large-online'
+        const selectedModelIds: string[] = profile.selected_models || [
+            'openai/gpt-4o', 'google/gemini-1.5-pro', 'anthropic/claude-3-5-sonnet'
         ];
 
-        models = models.filter(id => id.includes('/')); // Simple validation
-
-        // 5. Generate Dynamic Prompts
-        // A. For Main Brand
+        // 5. Generate Prompts (Strategies)
         const myStrategies = generatePrompts({
             industry: profile.industry,
             keywords: profile.keywords || [],
             company_name: company_name
         });
 
-        // B. For Competitors (if enabled)
+        // Competitors
         let competitorStrategies: { text: string; type: string; subject: string }[] = [];
-
         if (includeCompetitors && profile.competitors && profile.competitors.length > 0) {
-            // We take top 3 competitors to avoid explosion of cost
             const topCompetitors = profile.competitors.slice(0, 3);
-
             topCompetitors.forEach((comp: string) => {
                 const strategies = generatePrompts({
-                    industry: profile.industry, // Same industry context
-                    keywords: [], // We don't use keywords for competitors usually, or use generic ones
+                    industry: profile.industry,
+                    keywords: [],
                     company_name: comp
                 });
-
-                strategies.forEach(s => {
-                    competitorStrategies.push({ ...s, subject: comp });
-                });
+                strategies.forEach(s => competitorStrategies.push({ ...s, subject: comp }));
             });
         }
 
         const timestamp = new Date().toISOString();
-        let totalRunCost = 0;
 
-        // Combine all checks
-        // Main Brand items have subject = company_name
         const allChecks = [
             ...myStrategies.map(s => ({ ...s, subject: company_name })),
             ...competitorStrategies
         ];
 
-        // 6. Execute Scans
-        const executionPromises = models.flatMap(model =>
-            allChecks.map(async (check) => {
-                try {
-                    const llmResponse = await callLLM({
-                        model: model,
-                        messages: [{ role: 'user', content: check.text }]
-                    });
-
-                    let runCost = llmResponse.cost || 0;
-                    if (runCost === 0 && llmResponse.usage) {
-                        const inTokens = llmResponse.usage.prompt_tokens;
-                        const outTokens = llmResponse.usage.completion_tokens;
-                        runCost = (inTokens * 0.000003) + (outTokens * 0.000015);
-                    }
-                    totalRunCost += runCost;
-
-                    // We analyze against the SUBJECT of this specific check
-                    const analysis = analyzeResponse(llmResponse.text, check.subject);
-
-                    return {
-                        run_id: run.id,
-                        model_name: model,
-                        prompt_text: check.text,
-                        response_text: llmResponse.text,
-                        is_mentioned: analysis.isMentioned,
-                        rank_position: analysis.rank,
-                        sentiment_score: analysis.sentiment,
-                        created_at: timestamp,
-                        subject: check.subject // NEW FIELD
-                    };
-                } catch (err: any) {
-                    console.error(`Error querying ${model}`, err);
-                    return {
-                        run_id: run.id,
-                        model_name: model,
-                        prompt_text: check.text,
-                        response_text: `Error: ${err.message}`,
-                        is_mentioned: false,
-                        sentiment_score: 0,
-                        rank_position: null,
-                        created_at: timestamp,
-                        subject: check.subject
-                    };
-                }
-            })
+        // 6. Queue Items (Insert with status='pending')
+        const itemsToInsert = selectedModelIds.flatMap(model =>
+            allChecks.map(check => ({
+                run_id: run.id,
+                model_name: model,
+                prompt_text: check.text,
+                subject: check.subject,
+                status: 'pending', // Explicitly pending
+                created_at: timestamp
+            }))
         );
 
-        const processedResults = await Promise.all(executionPromises);
-
-        // 7. Save Results
-        const { error: resultsError } = await supabase
+        const { error: insertError } = await supabase
             .from('test_results')
-            .insert(processedResults);
+            .insert(itemsToInsert);
 
-        if (resultsError) throw resultsError;
+        if (insertError) throw insertError;
 
-        await supabase.from('test_runs').update({ status: 'completed' }).eq('id', run.id);
-
-        const newUsage = (profile.credits_used || 0) + totalRunCost;
-        await supabase.from('profiles').update({ credits_used: newUsage }).eq('id', user.id);
-
+        // Return immediately
         return NextResponse.json({
             success: true,
             runId: run.id,
-            count: processedResults.length,
-            cost: totalRunCost
+            count: itemsToInsert.length,
+            message: "Scan queued successfully. Processing started."
         });
 
     } catch (error: any) {

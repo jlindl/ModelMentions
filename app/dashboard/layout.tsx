@@ -6,6 +6,7 @@ import { useEffect, useState } from 'react';
 import { LayoutDashboard, MessageSquare, History, Settings, LogOut, Loader2, BarChart3, Search, User, Zap, Swords, Shield } from 'lucide-react';
 import { createClient } from '../utils/supabase/client';
 import { useRouter } from 'next/navigation';
+import { Skeleton } from '../components/Skeleton';
 import { Button } from '../components/Button';
 
 export default function DashboardLayout({
@@ -16,37 +17,44 @@ export default function DashboardLayout({
     const pathname = usePathname();
     const router = useRouter();
     const supabase = createClient();
-    const [userData, setUserData] = useState<{ name: string, plan: string }>({ name: 'Loading...', plan: 'Free' });
+    const [userData, setUserData] = useState<{ name: string, plan: string }>({ name: '', plan: '' });
+    const [isLoading, setIsLoading] = useState(true);
 
     useEffect(() => {
-        const checkOnboarding = async () => {
-            const { data: { user } } = await supabase.auth.getUser();
-            if (user) {
-                const { data: profile, error } = await supabase
-                    .from('profiles')
-                    .select('onboarding_completed, company_name, plan')
-                    .eq('id', user.id)
-                    .single();
+        const fetchUserData = async () => {
+            // We still fetch user data for display, but we don't need to redirect (Middleware does it)
+            // However, checking onboarding status is still useful UX.
+            try {
+                const { data: { user } } = await supabase.auth.getUser();
+                if (user) {
+                    const { data: profile, error } = await supabase
+                        .from('profiles')
+                        .select('onboarding_completed, company_name, plan')
+                        .eq('id', user.id)
+                        .single();
 
-                if (profile) {
-                    setUserData({
-                        name: profile.company_name || user.email?.split('@')[0] || 'User',
-                        plan: profile.plan ? profile.plan.charAt(0).toUpperCase() + profile.plan.slice(1) : 'Free'
-                    });
-                }
+                    if (profile) {
+                        setUserData({
+                            name: profile.company_name || user.email?.split('@')[0] || 'User',
+                            plan: profile.plan ? profile.plan.charAt(0).toUpperCase() + profile.plan.slice(1) : 'Free'
+                        });
+                    }
 
-                if ((error || (profile && !profile.onboarding_completed)) && pathname !== '/onboarding') {
-                    router.push('/onboarding');
+                    if ((error || (profile && !profile.onboarding_completed)) && pathname !== '/onboarding') {
+                        // Keep this for Onboarding flow, as Middleware doesn't know about onboarding status (it's in DB)
+                        router.push('/onboarding');
+                    }
                 }
+            } catch (error) {
+                console.error("Error fetching user data", error);
+            } finally {
+                setIsLoading(false);
             }
         };
-        checkOnboarding();
+        fetchUserData();
     }, [pathname, router, supabase]);
 
-    useEffect(() => {
-        // Temporary Auto-fix for model IDs
-        fetch('/api/fix-models').then(res => res.json()).then(console.log).catch(console.error);
-    }, []);
+
 
     const handleSignOut = async () => {
         await supabase.auth.signOut();
@@ -133,8 +141,17 @@ export default function DashboardLayout({
                             <User size={16} />
                         </div>
                         <div className="flex-1 min-w-0">
-                            <div className="text-white font-bold text-sm truncate" suppressHydrationWarning>{userData.name}</div>
-                            <div className="text-xs text-brand-yellow flex items-center gap-1" suppressHydrationWarning><span className="w-1.5 h-1.5 rounded-full bg-green-500 animate-pulse" /> {userData.plan} License</div>
+                            {isLoading ? (
+                                <div className="space-y-1">
+                                    <Skeleton className="h-4 w-24 bg-white/10" />
+                                    <Skeleton className="h-3 w-16 bg-white/10" />
+                                </div>
+                            ) : (
+                                <>
+                                    <div className="text-white font-bold text-sm truncate" suppressHydrationWarning>{userData.name}</div>
+                                    <div className="text-xs text-brand-yellow flex items-center gap-1" suppressHydrationWarning><span className="w-1.5 h-1.5 rounded-full bg-green-500 animate-pulse" /> {userData.plan} License</div>
+                                </>
+                            )}
                         </div>
                     </div>
 

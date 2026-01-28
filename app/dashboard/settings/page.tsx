@@ -26,7 +26,7 @@ export default function SettingsPage() {
     const [creditsUsed, setCreditsUsed] = useState(0);
 
     // Model Data
-    const [availableModels, setAvailableModels] = useState<any[]>([]);
+    const [availableModels, setAvailableModels] = useState<{ id: string; name: string; provider: string }[]>([]);
     const [selectedModels, setSelectedModels] = useState<string[]>([]);
     const [searchQuery, setSearchQuery] = useState('');
     const [modelFilter, setModelFilter] = useState('All');
@@ -132,9 +132,8 @@ export default function SettingsPage() {
                 .order('provider');
 
             if (models) setAvailableModels(models);
-
             setMessage({ type: 'success', text: `Synced ${data.count} models.` });
-        } catch (err: any) {
+        } catch (err: unknown) {
             setMessage({ type: 'error', text: 'Failed to sync models.' });
         } finally {
             setSyncing(false);
@@ -187,7 +186,7 @@ export default function SettingsPage() {
                         {tabs.map(tab => (
                             <button
                                 key={tab.id}
-                                onClick={() => setActiveTab(tab.id as any)}
+                                onClick={() => setActiveTab(tab.id as 'general' | 'models' | 'billing' | 'usage')}
                                 className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg transition-all duration-200 text-left font-medium ${activeTab === tab.id
                                     ? 'bg-brand-yellow text-black shadow-[0_0_15px_rgba(255,215,0,0.3)]'
                                     : 'text-gray-400 hover:text-white hover:bg-white/5'

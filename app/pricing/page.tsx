@@ -15,7 +15,7 @@ export default function PricingPage() {
                         Simple, Transparent <span className="text-brand-yellow">Pricing</span>
                     </h1>
                     <p className="text-xl text-gray-400 max-w-2xl mx-auto leading-relaxed">
-                        Choose the plan that fits your brand's scale. Upgrade or downgrade at any time.
+                        Choose the plan that fits your brand&apos;s scale. Upgrade or downgrade at any time.
                     </p>
                 </div>
             </section>

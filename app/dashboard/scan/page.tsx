@@ -34,6 +34,8 @@ export default function ScanPage() {
     // Confirmation State
     const [showConfirm, setShowConfirm] = useState(false);
     const [profileData, setProfileData] = useState<{ company: string, keywords: string[] } | null>(null);
+    const [progress, setProgress] = useState(0);
+    const [status, setStatus] = useState("Idle");
 
     const router = useRouter();
 
@@ -90,17 +92,128 @@ export default function ScanPage() {
         setShowConfirm(true);
     };
 
+    // Check for active runs on mount
+    useEffect(() => {
+        const checkActiveRun = async () => {
+            const supabase = createClient();
+            const { data: { user } } = await supabase.auth.getUser();
+            if (!user) return;
+
+            // Find any run that is 'running'
+            const { data: activeRun } = await supabase
+                .from('test_runs')
+                .select('*')
+                .eq('user_id', user.id)
+                .eq('status', 'running')
+                .order('created_at', { ascending: false })
+                .limit(1)
+                .single();
+
+            if (activeRun) {
+                // Found an interrupted run
+                addLog('⚠️ Detected interrupted scan. Resuming automatically...');
+
+                // Get count of pending items
+                const { count } = await supabase
+                    .from('test_results')
+                    .select('*', { count: 'exact', head: true })
+                    .eq('run_id', activeRun.id)
+                    .eq('status', 'pending');
+
+                // Also get total count to estimate progress
+                const { count: total } = await supabase
+                    .from('test_results')
+                    .select('*', { count: 'exact', head: true })
+                    .eq('run_id', activeRun.id);
+
+                if (count && count > 0) {
+                    setRunning(true);
+                    setStatus("Resuming Scan...");
+                    // Trigger processing loop
+                    executeScanLoop(activeRun.id, count, total || count);
+                } else {
+                    // It says running but nothing pending? Mark complete.
+                    await supabase.from('test_runs').update({ status: 'completed' }).eq('id', activeRun.id);
+                    addLog('Previous run had no pending items. Marked as complete.');
+                }
+            }
+        };
+        checkActiveRun();
+    }, []);
+
+    // Reusable Scan Loop
+    const executeScanLoop = async (runId: string, initialRemaining: number, totalCount: number) => {
+        let remaining = initialRemaining;
+
+        while (remaining > 0) {
+            const percent = totalCount > 0 ? Math.round(((totalCount - remaining) / totalCount) * 100) : 0;
+            setProgress(percent);
+            setStatus(`Scanning... ${percent}%`);
+
+            // Fetch/Process Batch
+            const processRes = await fetch('/api/run-test/process', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ runId, batchSize: 5 })
+            });
+
+            if (!processRes.ok) {
+                console.error("Batch processing failed, retrying...");
+                addLog("Retrying batch...");
+                await new Promise(r => setTimeout(r, 2000)); // wait 2s
+                continue; // Retry indefinitely (or could add max retries)
+            }
+
+            const processData = await processRes.json();
+
+            // Check if backend says we are done (e.g. strict boolean)
+            if (processData.completed) {
+                remaining = 0;
+                break;
+            }
+
+            const processedInBatch = processData.processed || 0;
+            if (processedInBatch > 0) {
+                addLog(`Processed ${processedInBatch} prompts...`);
+            }
+
+            // Update remaining from server response to be accurate
+            remaining = processData.remaining;
+        }
+
+        setProgress(100);
+        setStatus("Finalizing...");
+        addLog('All batches complete. Fetching final report...');
+
+        // Fetch Final Results
+        const supabase = createClient();
+        const { data: runResults, error: dbError } = await supabase
+            .from('test_results')
+            .select('*')
+            .eq('run_id', runId)
+            .order('created_at', { ascending: true });
+
+        if (runResults) {
+            setResults(runResults as TestResult[]);
+        }
+        setRunning(false);
+        addLog('Analysis Complete.');
+    };
+
     // Step 2: User confirms and runs
     const confirmAndRun = async () => {
         setShowConfirm(false);
         setRunning(true);
         setLogs([]);
         setResults([]);
+        setProgress(0);
+        setStatus("Initializing...");
 
         const mode = includeCompetitors ? 'PREMIUM COMPETITOR SCAN' : 'STANDARD SCAN';
         addLog(`Initializing ${mode} Engine on ${selectedModelsData.length} models...`);
 
         try {
+            // 1. Initialize Scan
             const response = await fetch('/api/run-test', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
@@ -111,7 +224,6 @@ export default function ScanPage() {
 
             if (!response.ok) {
                 const err = await response.json();
-
                 if (response.status === 403) {
                     setUpgradeMessage(err.error);
                     setShowUpgrade(true);
@@ -119,34 +231,23 @@ export default function ScanPage() {
                     setRunning(false);
                     return;
                 }
-
                 throw new Error(err.error || 'API Error');
             }
 
             const data = await response.json();
-            addLog(`Scan Run ID: ${data.runId}`);
-            addLog(`Processed ${data.count} checks across multiple consumer scenarios.`);
+            const { runId, count } = data;
 
-            // Fetch Results
-            const supabase = createClient();
-            const { data: runResults, error: dbError } = await supabase
-                .from('test_results')
-                .select('*')
-                .eq('run_id', data.runId) // Fixed data reference
-                .order('created_at', { ascending: true });
+            addLog(`Scan Run ID: ${runId}`);
+            addLog(`Queued ${count} checks. Starting batch processing...`);
 
-            if (dbError) throw new Error(dbError.message);
+            // 2. Start Processing Loop
+            await executeScanLoop(runId, count, count);
 
-            if (runResults) {
-                setResults(runResults as any[]);
-                addLog(`Loaded ${runResults.length} analysis reports.`);
-            }
-
-            addLog('Analysis Complete.');
-        } catch (error: any) {
-            addLog(`Error: ${error.message}`);
+        } catch (error: unknown) {
+            const msg = error instanceof Error ? error.message : 'Unknown error';
+            addLog(`Error: ${msg}`);
+            setRunning(false);
         }
-        setRunning(false);
     };
 
     // Group results by model
@@ -182,7 +283,7 @@ export default function ScanPage() {
                 currentUsage={upgradeMessage}
             />
 
-            {running && <ScanLoadingOverlay />}
+            {running && <ScanLoadingOverlay progress={progress} status={status} />}
 
             {/* Confirmation Modal */}
             {showConfirm && (

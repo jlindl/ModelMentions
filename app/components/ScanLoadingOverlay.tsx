@@ -5,10 +5,10 @@ import { Loader2, Zap, Radio, Search, ShieldCheck, Database, Server } from "luci
 
 interface ScanLoadingOverlayProps {
     status?: string;
+    progress?: number;
 }
 
-export function ScanLoadingOverlay({ status }: ScanLoadingOverlayProps) {
-    const [progress, setProgress] = useState(0);
+export function ScanLoadingOverlay({ status, progress }: ScanLoadingOverlayProps) {
     const [currentStep, setCurrentStep] = useState(0);
 
     const steps = [
@@ -22,19 +22,11 @@ export function ScanLoadingOverlay({ status }: ScanLoadingOverlayProps) {
     ];
 
     useEffect(() => {
-        const interval = setInterval(() => {
-            setProgress(prev => {
-                if (prev >= 100) return 100;
-                return prev + 1;
-            });
-        }, 150); // ~15 seconds total approximate
-
         const stepInterval = setInterval(() => {
             setCurrentStep(prev => (prev + 1) % steps.length);
         }, 2000);
 
         return () => {
-            clearInterval(interval);
             clearInterval(stepInterval);
         };
     }, []);

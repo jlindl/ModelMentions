@@ -127,7 +127,7 @@ export default function OnboardingPage() {
                     {step === 2 && (
                         <div className="flex-1 space-y-6 animate-fade-in-up">
                             <h2 className="text-2xl font-bold">What keywords matter to you?</h2>
-                            <p className="text-gray-400">We'll track how frequently these terms trigger mentions of your brand.</p>
+                            <p className="text-gray-400">We&apos;ll track how frequently these terms trigger mentions of your brand.</p>
 
                             <div>
                                 <label className="block text-sm font-medium text-gray-300 mb-2">Keywords (comma separated)</label>
@@ -144,7 +144,7 @@ export default function OnboardingPage() {
                     {step === 3 && (
                         <div className="flex-1 space-y-6 animate-fade-in-up">
                             <h2 className="text-2xl font-bold">Who are your competitors?</h2>
-                            <p className="text-gray-400">We'll benchmark your AI visibility against these companies.</p>
+                            <p className="text-gray-400">We&apos;ll benchmark your AI visibility against these companies.</p>
 
                             <div>
                                 <label className="block text-sm font-medium text-gray-300 mb-2">Competitors (comma separated)</label>
