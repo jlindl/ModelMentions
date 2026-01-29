@@ -336,7 +336,7 @@ export default function ScanPage() {
             <ResultDetailsModal
                 isOpen={!!selectedResult}
                 onClose={() => setSelectedResult(null)}
-                // result={null} // Deprecated prop
+
                 results={selectedResult ? groupedResults[selectedResult.model_name] || [] : []}
                 initialResultId={selectedResult?.id}
                 brandName={profileData?.company}

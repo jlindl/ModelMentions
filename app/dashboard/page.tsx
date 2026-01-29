@@ -117,7 +117,8 @@ export default function DashboardPage() {
                 <ResultDetailsModal
                     isOpen={isModalOpen}
                     onClose={() => setIsModalOpen(false)}
-                    result={selectedResult}
+                    results={selectedResult ? [selectedResult] : []}
+                    initialResultId={selectedResult?.id}
                 />
 
                 {/* Header */}
