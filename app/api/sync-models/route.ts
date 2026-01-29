@@ -1,4 +1,5 @@
 import { createClient } from '../../utils/supabase/server';
+import { createClient as createAdminClient } from '@supabase/supabase-js';
 import { NextResponse } from 'next/server';
 
 export async function POST(request: Request) {
@@ -9,6 +10,18 @@ export async function POST(request: Request) {
     if (!user) {
         return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
+
+    // Initialize Admin Client for DB operations (Bypass RLS)
+    const adminSupabase = createAdminClient(
+        process.env.NEXT_PUBLIC_SUPABASE_URL!,
+        process.env.SUPABASE_SERVICE_ROLE_KEY!,
+        {
+            auth: {
+                autoRefreshToken: false,
+                persistSession: false
+            }
+        }
+    );
 
     try {
         // 1. Fetch from OpenRouter
@@ -47,7 +60,7 @@ export async function POST(request: Request) {
         });
 
         // 3. Upsert to Supabase
-        const { error } = await supabase
+        const { error } = await adminSupabase
             .from('available_models')
             .upsert(modelsToUpsert, { onConflict: 'id' });
 

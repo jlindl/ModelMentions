@@ -84,6 +84,9 @@ export async function callLLM(request: LLMRequest): Promise<LLMResponse> {
             body.response_format = { type: 'json_object' };
         }
 
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 45000); // 45s timeout
+
         const response = await fetch(`${BASE_URL}/chat/completions`, {
             method: 'POST',
             headers: {
@@ -94,7 +97,10 @@ export async function callLLM(request: LLMRequest): Promise<LLMResponse> {
                 'X-Title': 'ModelMentions',
             },
             body: JSON.stringify(body),
+            signal: controller.signal
         });
+
+        clearTimeout(timeoutId);
 
         if (!response.ok) {
             const errorText = await response.text();

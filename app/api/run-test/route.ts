@@ -15,11 +15,11 @@ export async function POST(request: Request) {
     try {
         const body = await request.json().catch(() => ({}));
 
-        // 0. Check & Reset Billing Cycle (Using existing RPC)
+        // 0. Check & Reset Billing Cycle
         await supabase.rpc('check_and_reset_usage', { user_id: user.id });
 
         // 1. Validation
-        const { includeCompetitors } = await StartScanSchema.parseAsync(body);
+        const { includeCompetitors, basePrompt, variationCount } = await StartScanSchema.parseAsync(body);
 
         // 2. Fetch User Profile & Plan
         let { data: profile, error: profileError } = await supabase
@@ -43,7 +43,7 @@ export async function POST(request: Request) {
         const planFeatures = planData?.features || [];
         const hourlyLimit = planData?.requests_per_hour || 10;
 
-        // 3. Rate Limiting (DB-based)
+        // 3. Rate Limiting
         const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000).toISOString();
         const { count: recentRuns, error: rateError } = await supabase
             .from('test_runs')
@@ -59,19 +59,42 @@ export async function POST(request: Request) {
             }, { status: 429 });
         }
 
-        // Check Usage Limits
+        // 4. Usage & Cost Calculation
         const currentUsage = profile.credits_used || 0;
+        const selectedModelIds: string[] = profile.selected_models || [
+            'openai/gpt-4o', 'google/gemini-1.5-pro', 'anthropic/claude-3-5-sonnet'
+        ];
 
-        // Validating Premium Feature
+        // Determine number of prompts per model
+        // If basePrompt is set, we use variationCount. Otherwise, we use default static set (3).
+        const promptsPerModel = basePrompt ? variationCount : 3;
+
+        // Multiplier for competitors
+        const competitorData = profile.competitors || [];
+        const competitorCount = (includeCompetitors && competitorData.length > 0) ? Math.min(competitorData.length, 3) : 0;
+
+        // Total Checks = (1 self + N competitors) * Models * Prompts
+        // Cost = Total Checks * CostPerCheck (approx $0.10)
+        // We'll estimate cost here for basic validation, though real cost is tracked on result insert/update usually or assumed fixed.
+        // Assuming fairly standard cost per check for simplicity in this check:
+        const COST_PER_CHECK = 0.05; // $0.05 per model query
+        const totalChecks = (1 + competitorCount) * selectedModelIds.length * promptsPerModel;
+        const estimatedRunCost = totalChecks * COST_PER_CHECK;
+
+        // Validations
         if (includeCompetitors && !planFeatures.includes('competitor_analysis')) {
             return NextResponse.json({ error: 'Competitor Scan is a Premium/Ultra feature.' }, { status: 403 });
         }
 
-        if (currentUsage >= limit) return NextResponse.json({ error: 'Credit limit reached.' }, { status: 403 });
+        if (currentUsage + estimatedRunCost > limit) {
+            return NextResponse.json({
+                error: `Insufficient credits. This scan requires ~$${estimatedRunCost.toFixed(2)}, but you have $${(limit - currentUsage).toFixed(2)} remaining.`
+            }, { status: 403 });
+        }
 
         const company_name = profile.company_name || 'My Company';
 
-        // 3. Create a Test Run
+        // 5. Create Test Run
         const { data: run, error: runError } = await supabase
             .from('test_runs')
             .insert({ user_id: user.id, status: 'running' })
@@ -80,30 +103,55 @@ export async function POST(request: Request) {
 
         if (runError) throw runError;
 
-        // 4. Models to Query
-        const selectedModelIds: string[] = profile.selected_models || [
-            'openai/gpt-4o', 'google/gemini-1.5-pro', 'anthropic/claude-3-5-sonnet'
-        ];
+        // 6. Generate Prompts (Strategies)
+        // Note: For competitors, we simply use the SAME variations if possible, or regenerate.
+        // To save time/cost, if we generated dynamic variations for "Self", we should reuse the raw text for competitors.
+        // But `generatePrompts` encapsulates the logic. 
+        // OPTIMIZATION: Call generatePrompts once for "Self" to get the strategies/texts, then re-use texts.
 
-        // 5. Generate Prompts (Strategies)
-        const myStrategies = generatePrompts({
+        const myStrategies = await generatePrompts({
             industry: profile.industry,
             keywords: profile.keywords || [],
             company_name: company_name
-        });
+        }, { basePrompt, variationCount });
+
+        // Extract raw queries to reuse for competitors so we don't pay 4x LLM generaton cost
+        // The strategies returned by generatePrompts are already formatted "System... User: query...", so we might need to parse or just change the company name in the text (risky regex).
+        // BETTER: We refactored `generatePrompts` to accept `fixedVariations`. We can extract the raw variations if we had them?
+        // Actually, `myStrategies` are formatted prompts. 
+        // Let's iterate and extract the "USER QUERY: "..." part if we want to be clever, 
+        // OR just pass `basePrompt` to competitors too (independent generation, maybe slightly different results, acceptable but slower).
+        // Since we want consistency, let's try to pass the same "variations" if we can.
+
+        // If we used dynamic generation, we can't easily extract the raw queries from the formatted string without Regex.
+        // Regex to extract: /USER QUERY: "(.*?)"/ 
+        // Let's do that for consistency and speed.
+
+        let rawVariations: string[] | undefined;
+        if (basePrompt) {
+            rawVariations = myStrategies.map(s => {
+                const match = s.text.match(/USER QUERY: "(.*?)"/);
+                return match ? match[1] : basePrompt; // Fallback
+            });
+        }
 
         // Competitors
         let competitorStrategies: { text: string; type: string; subject: string }[] = [];
-        if (includeCompetitors && profile.competitors && profile.competitors.length > 0) {
-            const topCompetitors = profile.competitors.slice(0, 3);
-            topCompetitors.forEach((comp: string) => {
-                const strategies = generatePrompts({
+        if (competitorCount > 0) {
+            const topCompetitors = competitorData.slice(0, 3);
+            for (const comp of topCompetitors) {
+                // Use fixedVariations if we have them (from basePrompt flow), otherwise use default logic
+                const strategies = await generatePrompts({
                     industry: profile.industry,
                     keywords: [],
                     company_name: comp
+                }, {
+                    basePrompt: basePrompt, // Just in case we didn't extract well
+                    variationCount,
+                    fixedVariations: rawVariations // Use the reused ones!
                 });
                 strategies.forEach(s => competitorStrategies.push({ ...s, subject: comp }));
-            });
+            }
         }
 
         const timestamp = new Date().toISOString();
@@ -113,17 +161,21 @@ export async function POST(request: Request) {
             ...competitorStrategies
         ];
 
-        // 6. Queue Items (Insert with status='pending')
+        // 7. Queue Items
         const itemsToInsert = selectedModelIds.flatMap(model =>
             allChecks.map(check => ({
                 run_id: run.id,
                 model_name: model,
                 prompt_text: check.text,
                 subject: check.subject,
-                status: 'pending', // Explicitly pending
+                status: 'pending',
                 created_at: timestamp
             }))
         );
+
+        if (itemsToInsert.length === 0) {
+            throw new Error('No prompts generated. Please check your settings or base prompt.');
+        }
 
         const { error: insertError } = await supabase
             .from('test_results')
@@ -131,7 +183,6 @@ export async function POST(request: Request) {
 
         if (insertError) throw insertError;
 
-        // Return immediately
         return NextResponse.json({
             success: true,
             runId: run.id,

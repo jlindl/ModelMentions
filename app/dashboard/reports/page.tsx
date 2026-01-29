@@ -1,9 +1,9 @@
-'use client';
+"use client";
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { createClient } from '../../utils/supabase/client';
 import { Button } from '../../components/Button';
-import { Calendar, Download, FileText, Loader2, Sparkles, AlertCircle, History, ChevronRight } from 'lucide-react';
+import { Calendar, Download, FileText, Loader2, Sparkles, AlertCircle, History, ChevronRight, Share2, Printer } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import jsPDF from 'jspdf';
 import html2canvas from 'html2canvas';
@@ -17,6 +17,10 @@ export default function ReportsPage() {
     const [savedReports, setSavedReports] = useState<any[]>([]);
     const [loadingHistory, setLoadingHistory] = useState(true);
     const [userPlan, setUserPlan] = useState<string>('free');
+
+    // Check if printing / exporting
+    const [isExporting, setIsExporting] = useState(false);
+    const reportRef = useRef<HTMLDivElement>(null);
 
     // Fetch history on load
     useEffect(() => {
@@ -63,7 +67,7 @@ export default function ReportsPage() {
             const data = await res.json();
             setReport({
                 content: data.report,
-                title: data.savedReport?.title || 'New Analysis',
+                title: data.savedReport?.title || 'Brand Strategy Analysis',
                 date: new Date().toLocaleDateString()
             });
 
@@ -89,11 +93,22 @@ export default function ReportsPage() {
     };
 
     const downloadPDF = async () => {
-        const input = document.getElementById('report-content');
-        if (!input) return;
+        if (!reportRef.current) return;
+
+        setIsExporting(true);
+
+        // Wait a tick for state to update styles if needed
+        await new Promise(r => setTimeout(r, 100));
 
         try {
-            const canvas = await html2canvas(input, { scale: 2 });
+            const element = reportRef.current;
+            const canvas = await html2canvas(element, {
+                scale: 2,
+                useCORS: true,
+                logging: false,
+                backgroundColor: '#ffffff' // Force white background for PDF
+            });
+
             const imgData = canvas.toDataURL('image/png');
             const pdf = new jsPDF({
                 orientation: 'portrait',
@@ -105,16 +120,45 @@ export default function ReportsPage() {
             const pdfWidth = pdf.internal.pageSize.getWidth();
             const pdfHeight = (imgProps.height * pdfWidth) / imgProps.width;
 
-            pdf.addImage(imgData, 'PNG', 0, 0, pdfWidth, pdfHeight);
-            pdf.save(`ModelMentions_Report_${report?.title?.replace(/ /g, '_') || 'Analysis'}.pdf`);
+            // If report is long, we might need multiple pages, but simple image dump is standard for MVP
+            // Advanced paging logic would be needed for multi-page text
+            if (pdfHeight > pdf.internal.pageSize.getHeight()) {
+                // Simple multi-page support relies on splitting image, complex.
+                // For now, let's scale to fit or add pages?
+                // Standard approach: just add image to first page (it will shrink or crop).
+                // Better approach: split logic.
+
+                // For MVP reliability: Just save single long page as custom size if needed, OR force fit.
+                // Let's assume content isn't massive logic yet.
+                // Actually, let's set PDF height to match content
+                const customPdf = new jsPDF({
+                    orientation: 'portrait',
+                    unit: 'px',
+                    format: [pdfWidth, pdfHeight] // Custom format
+                });
+                customPdf.addImage(imgData, 'PNG', 0, 0, pdfWidth, pdfHeight);
+                customPdf.save(`ModelMentions_Report_${report?.title?.replace(/ /g, '_') || 'Analysis'}.pdf`);
+            } else {
+                pdf.addImage(imgData, 'PNG', 0, 0, pdfWidth, pdfHeight);
+                pdf.save(`ModelMentions_Report_${report?.title?.replace(/ /g, '_') || 'Analysis'}.pdf`);
+            }
+
         } catch (err) {
             console.error('PDF Download failed', err);
+            alert('Failed to generate PDF. Please try using "Print to PDF" instead.');
+        } finally {
+            setIsExporting(false);
         }
     };
 
+    const handlePrint = () => {
+        window.print();
+    };
+
     return (
-        <div className="max-w-6xl mx-auto animate-fade-in-up">
-            <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-8">
+        <div className="max-w-7xl mx-auto animate-fade-in-up pb-20">
+            {/* Top Bar */}
+            <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-8 print:hidden">
                 <div>
                     <h1 className="text-3xl font-bold text-white mb-2 flex items-center gap-2">
                         <FileText className="text-brand-yellow" /> Intelligence Reports
@@ -138,63 +182,95 @@ export default function ReportsPage() {
                 </div>
             </div>
 
-            <div className="grid grid-cols-1 lg:grid-cols-4 gap-8">
+            <div className="grid grid-cols-1 lg:grid-cols-4 gap-8 print:block">
                 {/* Main Content Area */}
-                <div className="lg:col-span-3 space-y-6">
+                <div className="lg:col-span-3 space-y-6 print:w-full">
+
                     {userPlan === 'free' ? (
-                        <PremiumGate
-                            title="Unlock Strategic Reports"
-                            description="Generating comprehensive PDF analysis of your brand's AI performance is exclusively available to PRO members."
-                            features={[
-                                "AI-Powered Strategic Analysis (GPT-5)",
-                                "Exportable PDF Reports",
-                                "Deep Sentiment Breakdown",
-                                "Actionable Recommendations"
-                            ]}
-                        />
+                        <div className="print:hidden">
+                            <PremiumGate
+                                title="Unlock Strategic Reports"
+                                description="Generating comprehensive PDF analysis of your brand's AI performance is exclusively available to PRO members."
+                                features={[
+                                    "AI-Powered Strategic Analysis (GPT-5)",
+                                    "Exportable PDF Reports",
+                                    "Deep Sentiment Breakdown",
+                                    "Actionable Recommendations"
+                                ]}
+                            />
+                        </div>
                     ) : report ? (
                         <div className="space-y-6">
-                            <div className="flex justify-between items-center bg-[#111] p-4 rounded-xl border border-white/10 sticky top-4 z-10 shadow-xl">
+
+                            {/* Toolbar */}
+                            <div className="flex justify-between items-center bg-[#111] p-4 rounded-xl border border-white/10 sticky top-4 z-20 shadow-xl print:hidden animate-fade-in">
                                 <div className="flex items-center gap-2 text-white">
                                     <FileText size={18} className="text-brand-yellow" />
                                     <span className="font-medium truncate max-w-[200px] md:max-w-none">{report.title}</span>
                                 </div>
-                                <div className="flex gap-3">
-                                    <Button variant="secondary" onClick={() => setReport(null)}>
+                                <div className="flex gap-2">
+                                    <Button variant="secondary" onClick={() => setReport(null)} size="sm">
                                         Close
                                     </Button>
-                                    <Button onClick={downloadPDF} className="flex items-center gap-2">
-                                        <Download size={18} /> <span className="hidden md:inline">Download PDF</span>
+                                    <Button variant="secondary" onClick={handlePrint} size="sm">
+                                        <Printer size={16} className="mr-2" /> Print
+                                    </Button>
+                                    <Button onClick={downloadPDF} disabled={isExporting} size="sm">
+                                        {isExporting ? <Loader2 className="animate-spin" /> : <Download size={16} className="mr-2" />}
+                                        Save PDF
                                     </Button>
                                 </div>
                             </div>
 
-                            <div id="report-content" className="bg-white text-black p-12 rounded-xl shadow-2xl min-h-[800px]">
-                                {/* Header for PDF */}
-                                <div className="border-b-2 border-black pb-6 mb-8 flex justify-between items-end">
+                            {/* Report Container (The part that gets exported) */}
+                            {/* We use specific print styles here */}
+                            <div
+                                ref={reportRef}
+                                id="report-content"
+                                className="bg-white text-black p-12 md:p-16 rounded-xl shadow-2xl min-h-[800px] relative overflow-hidden font-sans"
+                            >
+                                {/* Decorative elements for PDF/Print look */}
+                                <div className="absolute top-0 right-0 w-64 h-64 bg-gray-100 rounded-bl-full opacity-50 pointer-events-none"></div>
+
+                                <div className="relative z-10 border-b-2 border-black pb-8 mb-10 flex justify-between items-end">
                                     <div>
-                                        <h1 className="text-4xl font-bold tracking-tight mb-2">Brand Visibility Report</h1>
-                                        <p className="text-gray-600 font-mono text-sm uppercase tracking-widest">Generated by ModelMentions Intelligence</p>
+                                        <div className="flex items-center gap-2 mb-4 text-brand-yellow">
+                                            {/* Logo placeholder or simple circle */}
+                                            <div className="w-8 h-8 rounded-full bg-black flex items-center justify-center">
+                                                <div className="w-3 h-3 bg-white rounded-sm transform rotate-45"></div>
+                                            </div>
+                                        </div>
+                                        <h1 className="text-4xl font-extrabold tracking-tight mb-2 text-black">Strategic Brand Analysis</h1>
+                                        <p className="text-gray-500 font-mono text-xs uppercase tracking-[0.2em]">ModelMentions Intelligence Report</p>
                                     </div>
                                     <div className="text-right">
-                                        <div className="text-sm font-bold">{report.date}</div>
-                                        <div className="text-xs text-gray-500">Privileged & Confidential</div>
+                                        <div className="text-2xl font-bold text-black">{report.date}</div>
+                                        <div className="text-xs text-gray-500 font-medium">CONFIDENTIAL</div>
                                     </div>
                                 </div>
 
-                                {/* Markdown Content */}
-                                <div className="prose prose-lg max-w-none prose-headings:font-bold prose-h1:text-3xl prose-h2:text-2xl prose-h2:mt-8 prose-h2:mb-4 prose-p:text-gray-700 prose-li:text-gray-700">
+                                {/* Content */}
+                                <div className="prose prose-lg max-w-none 
+                                    prose-headings:font-bold prose-headings:text-black 
+                                    prose-h1:text-3xl prose-h2:text-2xl prose-h2:mt-10 prose-h2:mb-6 prose-h2:border-b prose-h2:border-gray-200 prose-h2:pb-2
+                                    prose-p:text-gray-700 prose-p:leading-relaxed
+                                    prose-li:text-gray-700 prose-li:marker:text-black
+                                    prose-strong:text-black prose-strong:font-extrabold
+                                    prose-blockquote:border-l-4 prose-blockquote:border-black prose-blockquote:bg-gray-50 prose-blockquote:py-2 prose-blockquote:px-4 prose-blockquote:italic
+                                ">
                                     <ReactMarkdown>{report.content}</ReactMarkdown>
                                 </div>
 
-                                {/* Footer for PDF */}
-                                <div className="mt-20 pt-8 border-t border-gray-200 text-center text-gray-400 text-xs">
-                                    <p>© 2026 ModelMentions Inc. All rights reserved.</p>
+                                {/* Footer */}
+                                <div className="mt-24 pt-8 border-t border-gray-200 flex justify-between items-center text-gray-400 text-xs">
+                                    <p>© 2026 ModelMentions Inc.</p>
+                                    <p>AI-Generated Analysis • Verified by ModelMentions Engine</p>
                                 </div>
                             </div>
+
                         </div>
                     ) : (
-                        <div className="bg-[#0a0a0a] border border-white/10 rounded-2xl p-12 text-center flex flex-col items-center justify-center min-h-[400px]">
+                        <div className="bg-[#0a0a0a] border border-white/10 rounded-2xl p-12 text-center flex flex-col items-center justify-center min-h-[400px] print:hidden">
                             <div className="w-20 h-20 bg-brand-yellow/10 rounded-full flex items-center justify-center mx-auto mb-6 border border-brand-yellow/20">
                                 <Sparkles size={40} className="text-brand-yellow" />
                             </div>
@@ -219,7 +295,7 @@ export default function ReportsPage() {
                 </div>
 
                 {/* Sidebar History */}
-                <div className="lg:col-span-1">
+                <div className="lg:col-span-1 print:hidden">
                     <div className="bg-[#0a0a0a] border border-white/10 rounded-xl p-4 sticky top-4">
                         <h3 className="text-sm font-bold text-gray-400 uppercase tracking-widest mb-4 flex items-center gap-2">
                             <History size={14} /> Past Reports

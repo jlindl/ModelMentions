@@ -140,6 +140,53 @@ export default function SettingsPage() {
         }
     };
 
+    const applyBundle = (type: 'BIG_3' | 'SPEED' | 'ALL' | 'CLEAR') => {
+        if (type === 'CLEAR') {
+            setSelectedModels([]);
+            setMessage({ type: 'success', text: 'Selection cleared.' });
+            return;
+        }
+
+        if (availableModels.length === 0) return;
+
+        let filtered: any[] = [];
+        switch (type) {
+            case 'BIG_3':
+                filtered = availableModels.filter(m =>
+                    m.name.includes('GPT-4o') ||
+                    m.name.includes('Claude 3.5 Sonnet') ||
+                    m.name.includes('Gemini 1.5 Pro')
+                );
+                // Fallback
+                if (filtered.length < 3) {
+                    filtered = availableModels.filter(m => m.provider === 'OpenAI' || m.provider === 'Anthropic' || m.provider === 'Google').slice(0, 3);
+                }
+                break;
+            case 'SPEED':
+                filtered = availableModels.filter(m =>
+                    m.name.includes('Flash') ||
+                    m.name.includes('Haiku') ||
+                    m.name.includes('mini')
+                );
+                break;
+            case 'ALL':
+                filtered = availableModels;
+                break;
+        }
+
+        const currentPlan = userPlan as keyof typeof PLAN_CONFIG;
+        const limit = PLAN_CONFIG[currentPlan]?.maxModels || 5;
+        const newIds = filtered.map(m => m.id);
+
+        if (newIds.length > limit) {
+            setMessage({ type: 'error', text: `Bundle size (${newIds.length}) exceeds plan limit of ${limit}. Selection truncated.` });
+            setSelectedModels(newIds.slice(0, limit));
+        } else {
+            setSelectedModels(newIds);
+            setMessage({ type: 'success', text: `Applied bundle with ${newIds.length} models.` });
+        }
+    };
+
     const toggleModel = (modelId: string) => {
         setSelectedModels(prev => {
             if (prev.includes(modelId)) {
@@ -325,6 +372,25 @@ export default function SettingsPage() {
                                             {syncing ? 'Syncing...' : 'Refresh List'}
                                         </button>
                                         <div className="text-sm font-mono text-brand-yellow font-bold">{selectedModels.length} Selected</div>
+                                    </div>
+                                </div>
+
+                                {/* Bundle Quick Select */}
+                                <div className="mb-6 bg-[#111] border border-white/5 p-4 rounded-xl">
+                                    <h3 className="text-sm font-bold text-gray-400 mb-3 uppercase tracking-wider">Quick Select Bundles</h3>
+                                    <div className="flex flex-wrap gap-2">
+                                        <button type="button" onClick={() => applyBundle('BIG_3')} className="bg-white/5 hover:bg-white/10 border border-white/10 hover:border-brand-yellow/30 text-xs px-3 py-2 rounded-lg transition-colors text-white flex items-center gap-2">
+                                            <Zap size={14} className="text-brand-yellow" /> Top 3 SOTA
+                                        </button>
+                                        <button type="button" onClick={() => applyBundle('SPEED')} className="bg-white/5 hover:bg-white/10 border border-white/10 hover:border-brand-yellow/30 text-xs px-3 py-2 rounded-lg transition-colors text-white flex items-center gap-2">
+                                            <RotateCw size={14} className="text-blue-400" /> Speed/Flash
+                                        </button>
+                                        <button type="button" onClick={() => applyBundle('ALL')} className="bg-white/5 hover:bg-white/10 border border-white/10 hover:border-brand-yellow/30 text-xs px-3 py-2 rounded-lg transition-colors text-white">
+                                            Select All
+                                        </button>
+                                        <button type="button" onClick={() => applyBundle('CLEAR')} className="text-xs text-red-400 hover:text-red-300 px-3 py-2 ml-auto">
+                                            Clear Selection
+                                        </button>
                                     </div>
                                 </div>
 

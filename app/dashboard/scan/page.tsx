@@ -10,6 +10,7 @@ import { ResultDetailsModal } from './ResultDetailsModal';
 import { ScanLoadingOverlay } from '../../components/ScanLoadingOverlay';
 
 interface TestResult {
+    id: string;
     model_name: string;
     response_text: string;
     is_mentioned: boolean;
@@ -53,23 +54,22 @@ export default function ScanPage() {
                     .single();
 
                 if (profile) {
-                    setUserPlan(profile.plan || 'free'); // Create state for this
+                    setUserPlan(profile.plan || 'free');
                     setProfileData({
                         company: profile.company_name || 'Not Configured',
                         keywords: profile.keywords || []
                     });
-                }
 
-                const selectedIds = profile?.selected_models || [];
+                    // Load selected models from Settings
+                    const selectedIds = profile.selected_models || [];
+                    if (selectedIds.length > 0) {
+                        const { data: models } = await supabase
+                            .from('available_models')
+                            .select('*')
+                            .in('id', selectedIds);
 
-                if (selectedIds.length > 0) {
-                    // Fetch details for these IDs
-                    const { data: models } = await supabase
-                        .from('available_models')
-                        .select('*')
-                        .in('id', selectedIds);
-
-                    if (models) setSelectedModelsData(models);
+                        if (models) setSelectedModelsData(models);
+                    }
                 }
             }
             setLoadingModels(false);
@@ -83,10 +83,15 @@ export default function ScanPage() {
     const [includeCompetitors, setIncludeCompetitors] = useState(false);
     const [userPlan, setUserPlan] = useState('free');
 
+    // New Scan Options
+    const [basePrompt, setBasePrompt] = useState('');
+    const [variationCount, setVariationCount] = useState(3);
+
     // Step 1: User clicks Initialize
     const handleInitialize = () => {
         if (selectedModelsData.length === 0) {
-            router.push('/dashboard/settings');
+            // If they click initialize with nothing, maybe prompt? 
+            // The button is disabled anyway by default, but I'll add logic to be safe
             return;
         }
         setShowConfirm(true);
@@ -141,44 +146,99 @@ export default function ScanPage() {
         checkActiveRun();
     }, []);
 
+    const handleReset = async () => {
+        setRunning(false);
+        setStatus("Stopped");
+        addLog('🛑 Scan Force Stopped by user.');
+
+        // Find and cancel active run in DB
+        const supabase = createClient();
+        const { data: { user } } = await supabase.auth.getUser();
+        if (user) {
+            await supabase.from('test_runs')
+                .update({ status: 'cancelled' })
+                .eq('user_id', user.id)
+                .eq('status', 'running');
+        }
+    };
+
     // Reusable Scan Loop
     const executeScanLoop = async (runId: string, initialRemaining: number, totalCount: number) => {
         let remaining = initialRemaining;
+        let retryCount = 0;
+        const MAX_RETRIES = 5;
 
         while (remaining > 0) {
             const percent = totalCount > 0 ? Math.round(((totalCount - remaining) / totalCount) * 100) : 0;
             setProgress(percent);
             setStatus(`Scanning... ${percent}%`);
 
-            // Fetch/Process Batch
-            const processRes = await fetch('/api/run-test/process', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ runId, batchSize: 5 })
-            });
+            try {
+                // Fetch/Process Batch
+                const processRes = await fetch('/api/run-test/process', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ runId, batchSize: 5 })
+                });
 
-            if (!processRes.ok) {
-                console.error("Batch processing failed, retrying...");
-                addLog("Retrying batch...");
-                await new Promise(r => setTimeout(r, 2000)); // wait 2s
-                continue; // Retry indefinitely (or could add max retries)
+                if (!processRes.ok) {
+                    if (processRes.status === 401) {
+                        addLog('❌ Session Expired. Please log in again.');
+                        setStatus("Session Expired");
+                        setRunning(false);
+                        // Optional: Redirect to login after short delay
+                        setTimeout(() => router.push('/auth'), 2000);
+                        return;
+                    }
+
+                    retryCount++;
+                    const errorText = await processRes.text();
+                    console.error(`Batch processing failed (${processRes.status}): ${errorText}`);
+                    addLog(`Batch Error (${processRes.status}): Retrying (${retryCount}/${MAX_RETRIES})...`);
+
+                    if (retryCount > MAX_RETRIES) {
+                        addLog('❌ Too many failures. Aborting scan.');
+                        setStatus("Scan Failed");
+                        setRunning(false);
+                        return; // Exit function
+                    }
+
+                    await new Promise(r => setTimeout(r, 2000)); // wait 2s
+                    continue;
+                }
+
+                // Reset retries on success
+                retryCount = 0;
+
+                const processData = await processRes.json();
+
+                // Check if backend says we are done (e.g. strict boolean)
+                if (processData.completed) {
+                    remaining = 0;
+                    break;
+                }
+
+                const processedInBatch = processData.processed || 0;
+                if (processedInBatch > 0) {
+                    addLog(`Processed ${processedInBatch} prompts...`);
+                }
+
+                // Update remaining from server response to be accurate
+                remaining = processData.remaining;
+
+            } catch (networkErr) {
+                console.error("Network error in batch loop", networkErr);
+                addLog(`Network Error: Retrying...`);
+                await new Promise(r => setTimeout(r, 3000));
+                // Network errors also count towards retries to prevent infinite offline loops
+                retryCount++;
+                if (retryCount > MAX_RETRIES) {
+                    addLog('❌ Network unstable. Aborting scan.');
+                    setStatus("Network Error");
+                    setRunning(false);
+                    return;
+                }
             }
-
-            const processData = await processRes.json();
-
-            // Check if backend says we are done (e.g. strict boolean)
-            if (processData.completed) {
-                remaining = 0;
-                break;
-            }
-
-            const processedInBatch = processData.processed || 0;
-            if (processedInBatch > 0) {
-                addLog(`Processed ${processedInBatch} prompts...`);
-            }
-
-            // Update remaining from server response to be accurate
-            remaining = processData.remaining;
         }
 
         setProgress(100);
@@ -218,7 +278,9 @@ export default function ScanPage() {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
-                    includeCompetitors: includeCompetitors
+                    includeCompetitors: includeCompetitors,
+                    basePrompt: basePrompt || undefined,
+                    variationCount: variationCount
                 })
             });
 
@@ -270,10 +332,13 @@ export default function ScanPage() {
 
     return (
         <div className="space-y-8 animate-fade-in-up flex flex-col relative min-h-screen pb-20">
+            {/* Modal */}
             <ResultDetailsModal
                 isOpen={!!selectedResult}
                 onClose={() => setSelectedResult(null)}
-                result={selectedResult}
+                // result={null} // Deprecated prop
+                results={selectedResult ? groupedResults[selectedResult.model_name] || [] : []}
+                initialResultId={selectedResult?.id}
                 brandName={profileData?.company}
             />
 
@@ -283,7 +348,7 @@ export default function ScanPage() {
                 currentUsage={upgradeMessage}
             />
 
-            {running && <ScanLoadingOverlay progress={progress} status={status} />}
+            {running && <ScanLoadingOverlay progress={progress} status={status} logs={logs} />}
 
             {/* Confirmation Modal */}
             {showConfirm && (
@@ -310,7 +375,7 @@ export default function ScanPage() {
                                 </div>
                                 <div className="flex justify-between items-center border-b border-white/5 pb-2">
                                     <span className="text-gray-400 text-sm">Scan Depth</span>
-                                    <span className="text-white font-bold">3 Prompts / Model</span>
+                                    <span className="text-white font-bold">{variationCount} Prompts / Model</span>
                                 </div>
                                 <div className="flex justify-between items-start pt-1">
                                     <span className="text-gray-400 text-sm">Selected Models</span>
@@ -326,7 +391,7 @@ export default function ScanPage() {
                             </div>
 
                             <p className="text-xs text-center text-gray-500">
-                                This scan will consume approximately <span className="text-white font-bold">{selectedModelsData.length * 3 * 0.1 * (includeCompetitors ? 2 : 1)} credits</span> based on current rates.
+                                This scan will consume approximately <span className="text-white font-bold">{selectedModelsData.length * variationCount * 0.05 * (includeCompetitors ? 2 : 1)} credits</span> based on current rates.
                             </p>
                         </div>
 
@@ -366,13 +431,11 @@ export default function ScanPage() {
                 </div>
             )}
 
-            {/* Header Area */}
-            <div className="bg-[#0a0a0a] border-b border-white/10 -mx-6 -mt-6 px-6 py-8 mb-4">
+            {/* Header Area - Glassmorphism & Sticky */}
+            <div className="sticky top-0 z-40 backdrop-blur-xl bg-black/60 border-b border-white/10 -mx-6 -mt-6 px-6 py-6 mb-8 transition-all duration-300 shadow-2xl shadow-black/50">
                 <div className="max-w-6xl mx-auto flex flex-col md:flex-row md:items-end justify-between gap-6">
                     <div>
-                        <div className="flex items-center gap-2 mb-2">
-                            <span className="text-xs font-bold text-brand-yellow uppercase tracking-widest border border-brand-yellow/30 px-2 py-0.5 rounded-full bg-brand-yellow/10">v2.4 Engine</span>
-                        </div>
+
                         <h1 className="text-4xl font-bold text-white mb-2 tracking-tight">Active Scan</h1>
 
                         {/* Selected Models Display */}
@@ -411,9 +474,19 @@ export default function ScanPage() {
 
                     <div className="flex items-center gap-4">
                         {running && (
-                            <div className="flex items-center gap-2 text-brand-yellow animate-pulse text-sm font-mono">
-                                <Loader2 size={16} className="animate-spin" />
-                                PROCESSING SCENARIOS...
+                            <div className="flex items-center gap-4">
+                                <div className="flex items-center gap-2 text-brand-yellow animate-pulse text-sm font-mono">
+                                    <Loader2 size={16} className="animate-spin" />
+                                    PROCESSING SCENARIOS...
+                                </div>
+                                <Button
+                                    onClick={handleReset}
+                                    variant="secondary"
+                                    size="sm"
+                                    className="h-8 text-xs bg-red-900/20 text-red-400 border-red-900/50 hover:bg-red-900/40 hover:text-red-300"
+                                >
+                                    Force Stop
+                                </Button>
                             </div>
                         )}
                         <Button
@@ -435,7 +508,7 @@ export default function ScanPage() {
                     <div className="space-y-8 animate-fade-in-up">
                         {/* Stats Overview */}
                         <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                            <div className="bg-[#111] border border-white/10 p-6 rounded-2xl relative overflow-hidden group hover:border-brand-yellow/30 transition-all">
+                            <div className="bg-white/5 backdrop-blur-md border border-white/10 p-6 rounded-2xl relative overflow-hidden group hover:border-brand-yellow/30 transition-all hover:shadow-[0_0_30px_rgba(255,215,0,0.1)]">
                                 <div className="absolute top-0 right-0 p-4 opacity-10 group-hover:scale-110 transition-transform"><Target size={40} /></div>
                                 <div className="text-gray-400 text-xs font-bold uppercase tracking-widest mb-2">Visibility</div>
                                 <div className="text-4xl font-bold text-white flex items-baseline gap-2">
@@ -477,13 +550,47 @@ export default function ScanPage() {
                             ))}
                         </div>
 
-                        {/* Detailed Results */}
-                        <div className="space-y-6">
+                        {/* Post-Scan Actions Bar */}
+                        <div className="bg-white/5 backdrop-blur-md border border-brand-yellow/20 p-4 rounded-xl flex flex-col md:flex-row items-center justify-between gap-4 animate-fade-in shadow-[0_0_30px_rgba(255,215,0,0.05)] relative overflow-hidden">
+                            <div className="absolute inset-0 bg-brand-yellow/5 animate-pulse opacity-20 pointer-events-none"></div>
+                            <div className="flex items-center gap-3">
+                                <div className="p-2 bg-brand-yellow/10 rounded-lg text-brand-yellow">
+                                    <Sparkles size={20} />
+                                </div>
+                                <div>
+                                    <h3 className="text-white font-bold">Scan Complete</h3>
+                                    <p className="text-xs text-gray-500">Analysis finished for {modelKeys.length} models.</p>
+                                </div>
+                            </div>
+                            <div className="flex items-center gap-3 w-full md:w-auto">
+                                <Button
+                                    variant="secondary"
+                                    onClick={() => {
+                                        setResults([]);
+                                        setLogs([]);
+                                        setShowConfirm(false);
+                                        // Keeping settings
+                                    }}
+                                    className="flex-1 md:flex-none"
+                                >
+                                    <Search size={16} className="mr-2" /> New Configuration
+                                </Button>
+                                <Button
+                                    onClick={confirmAndRun}
+                                    className="flex-1 md:flex-none bg-brand-yellow text-black hover:bg-yellow-400 font-bold"
+                                >
+                                    <Play size={16} className="mr-2 fill-current" /> Run Again
+                                </Button>
+                            </div>
+                        </div>
+
+                        {/* Detailed Results with Enhanced Styling */}
+                        <div className="space-y-8">
                             <h2 className="text-2xl font-bold text-white flex items-center gap-2">
                                 <Search className="text-brand-yellow" /> Analysis by Model
                             </h2>
 
-                            <div className="grid gap-6">
+                            <div className="grid gap-8">
                                 {modelKeys.map((modelName, i) => {
                                     const modelResults = groupedResults[modelName];
                                     const mentionsCount = modelResults.filter(r => r.is_mentioned).length;
@@ -491,40 +598,40 @@ export default function ScanPage() {
                                     const isMentionedAny = mentionsCount > 0;
 
                                     return (
-                                        <div key={i} className={`p-6 rounded-2xl border transition-all duration-300 ${isMentionedAny ? 'bg-gradient-to-br from-[#1a1a1a] to-black border-brand-yellow/30 shadow-[0_0_20px_rgba(255,215,0,0.05)]' : 'bg-[#111] border-white/5 opacity-80'}`}>
+                                        <div key={i} className={`p-6 rounded-2xl border transition-all duration-500 overflow-hidden relative ${isMentionedAny ? 'bg-gradient-to-br from-[#1a1a1a]/80 to-black/90 border-brand-yellow/30 shadow-[0_0_50px_rgba(255,215,0,0.05)]' : 'bg-white/5 border-white/5 backdrop-blur-sm'}`}>
+                                            {isMentionedAny && <div className="absolute inset-0 bg-brand-yellow/5 pointer-events-none" />}
                                             {/* Model Header */}
                                             <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-6 pb-4 border-b border-white/5">
                                                 <div className="flex items-center gap-4">
-                                                    <div className={`w-12 h-12 rounded-xl flex items-center justify-center text-xl font-bold shadow-inner ${isMentionedAny ? 'bg-brand-yellow/20 text-brand-yellow border border-brand-yellow/20' : 'bg-white/10 text-gray-600'
+                                                    <div className={`w-14 h-14 rounded-2xl flex items-center justify-center text-2xl font-bold shadow-inner ${isMentionedAny ? 'bg-brand-yellow/10 text-brand-yellow border border-brand-yellow/20' : 'bg-white/5 text-gray-600 border border-white/5'
                                                         }`}>
                                                         {modelName.includes('gpt') ? 'GPT' : modelName.includes('claude') ? 'CL' : modelName.charAt(0).toUpperCase()}
                                                     </div>
                                                     <div>
-                                                        <h3 className="font-bold text-white text-lg flex items-center gap-2">
+                                                        <h3 className="font-bold text-white text-xl flex items-center gap-2">
                                                             {modelName}
                                                         </h3>
                                                         <div className="flex items-center gap-4 text-xs text-gray-400 mt-1">
-                                                            <span className={isMentionedAny ? 'text-green-400' : 'text-gray-500'}>
-                                                                Mention Rate: {Math.round((mentionsCount / totalCount) * 100)}%
+                                                            <span className={`px-2 py-0.5 rounded ${isMentionedAny ? 'bg-green-500/10 text-green-400 border border-green-500/20' : 'bg-gray-800 text-gray-500'}`}>
+                                                                Visibility: {Math.round((mentionsCount / totalCount) * 100)}%
                                                             </span>
                                                         </div>
                                                     </div>
                                                 </div>
 
                                                 {isMentionedAny ? (
-                                                    <div className="flex items-center gap-2 bg-green-500/10 text-green-400 px-4 py-2 rounded-lg border border-green-500/20">
-                                                        <CheckCircle2 size={16} /> <span className="text-sm font-bold">BRAND DETECTED</span>
+                                                    <div className="flex items-center gap-2 bg-green-500/10 text-green-400 px-5 py-3 rounded-xl border border-green-500/20 shadow-[0_0_15px_rgba(34,197,94,0.1)]">
+                                                        <CheckCircle2 size={20} /> <span className="text-sm font-bold tracking-wide">BRAND DETECTED</span>
                                                     </div>
                                                 ) : (
-                                                    <div className="flex items-center gap-2 bg-red-500/10 text-red-400 px-4 py-2 rounded-lg border border-red-500/20">
-                                                        <AlertTriangle size={16} /> <span className="text-sm font-bold">NOT FOUND</span>
+                                                    <div className="flex items-center gap-2 bg-red-500/10 text-red-400 px-5 py-3 rounded-xl border border-red-500/20">
+                                                        <AlertTriangle size={20} /> <span className="text-sm font-bold tracking-wide">NOT FOUND</span>
                                                     </div>
                                                 )}
                                             </div>
 
-                                            {/* Scenarios Grid */}
-                                            {/* Results List */}
-                                            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+                                            {/* Results List - Enhanced Card Design */}
+                                            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                                                 {modelResults.map((res, idx) => {
                                                     const type = res.prompt_text.includes('best') ? 'DISCOVERY' : res.prompt_text.includes('leading') ? 'MARKET' : 'PROBLEM';
                                                     const isCompetitor = res.subject && res.subject !== profileData?.company;
@@ -533,39 +640,60 @@ export default function ScanPage() {
                                                         <div
                                                             key={idx}
                                                             onClick={() => setSelectedResult(res)}
-                                                            className={`group relative border p-4 rounded-xl transition-all cursor-pointer h-full flex flex-col hover:shadow-lg ${isCompetitor
-                                                                ? 'bg-[#1a1111] border-red-900/30 hover:bg-[#2a1a1a] hover:border-red-500/30'
-                                                                : 'bg-black/40 border-white/10 hover:bg-white/5 hover:border-brand-yellow/30'
+                                                            className={`group relative border p-5 rounded-xl transition-all cursor-pointer h-full flex flex-col hover:-translate-y-1 hover:shadow-2xl duration-300 ${isCompetitor
+                                                                ? 'bg-red-950/10 border-red-900/30 hover:bg-red-900/20 hover:border-red-500/30 backdrop-blur-md'
+                                                                : 'bg-white/5 border-white/10 hover:bg-white/10 hover:border-brand-yellow/30 backdrop-blur-md'
                                                                 }`}
                                                         >
-                                                            <div className="flex justify-between items-start mb-3">
-                                                                <div className="flex gap-2">
-                                                                    <span className={`text-[10px] font-bold uppercase tracking-wider px-2 py-1 rounded-md border ${type === 'DISCOVERY' ? 'text-blue-400 border-blue-400/20 bg-blue-400/10' :
-                                                                        type === 'MARKET' ? 'text-purple-400 border-purple-400/20 bg-purple-400/10' :
-                                                                            'text-orange-400 border-orange-400/20 bg-orange-400/10'
+                                                            {/* Semantic Tag & Status */}
+                                                            <div className="flex justify-between items-start mb-4">
+                                                                <div className="flex flex-wrap gap-2">
+                                                                    <span className={`text-[9px] font-bold uppercase tracking-wider px-2 py-1 rounded-md border shadow-sm ${type === 'DISCOVERY' ? 'text-blue-300 border-blue-500/30 bg-blue-500/10' :
+                                                                        type === 'MARKET' ? 'text-purple-300 border-purple-500/30 bg-purple-500/10' :
+                                                                            'text-orange-300 border-orange-500/30 bg-orange-500/10'
                                                                         }`}>
                                                                         {type}
                                                                     </span>
                                                                     {isCompetitor && (
-                                                                        <span className="text-[10px] font-bold uppercase tracking-wider px-2 py-1 rounded-md border text-red-400 border-red-400/20 bg-red-400/10">
-                                                                            COMPETITOR
+                                                                        <span className="text-[9px] font-bold uppercase tracking-wider px-2 py-1 rounded-md border text-red-300 border-red-500/30 bg-red-500/10">
+                                                                            VS {res.subject}
                                                                         </span>
                                                                     )}
                                                                 </div>
-                                                                {res.is_mentioned ? <CheckCircle2 size={16} className={isCompetitor ? "text-red-500" : "text-brand-yellow"} /> : <div className="w-4 h-4 rounded-full border border-gray-600" />}
+                                                                <div className={`w-6 h-6 rounded-full flex items-center justify-center border shadow-lg ${res.is_mentioned
+                                                                    ? (isCompetitor ? 'bg-red-500 text-white border-red-400' : 'bg-brand-yellow text-black border-yellow-300')
+                                                                    : 'bg-transparent border-gray-700 text-gray-600'}`}>
+                                                                    {res.is_mentioned ? <CheckCircle2 size={14} /> : <div className="w-2 h-2 rounded-full bg-current" />}
+                                                                </div>
                                                             </div>
 
-                                                            {isCompetitor && (
-                                                                <div className="text-xs font-bold text-gray-500 mb-1 uppercase tracking-widest">Target: {res.subject}</div>
-                                                            )}
-
-                                                            <div className="text-sm text-gray-300 line-clamp-3 mb-4 flex-1">
-                                                                "{res.response_text}"
+                                                            {/* Snippet Content */}
+                                                            <div className="mb-4 flex-1">
+                                                                <div className="text-[11px] text-gray-500 font-mono mb-2 uppercase tracking-tight">AI Response Snippet</div>
+                                                                <div className="text-sm text-gray-300 leading-relaxed max-h-24 overflow-hidden relative">
+                                                                    "{res.response_text}"
+                                                                    <div className={`absolute inset-x-0 bottom-0 h-8 bg-gradient-to-t ${isCompetitor ? 'from-[#1a1111]' : 'from-black/40'} to-transparent`} />
+                                                                </div>
                                                             </div>
 
-                                                            <div className="pt-3 border-t border-white/5 flex justify-between items-center text-xs text-gray-500 group-hover:text-gray-300 transition-colors">
-                                                                <span>Rank: <span className="text-white font-mono">{res.rank_position ? `#${res.rank_position}` : '-'}</span></span>
-                                                                <span className={`flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity ${isCompetitor ? 'text-red-400' : 'text-brand-yellow'}`}>View Details <ChevronRight size={12} /></span>
+                                                            {/* Footer Stats */}
+                                                            <div className="pt-3 border-t border-white/5 flex justify-between items-center">
+                                                                <div className="flex gap-3 text-xs">
+                                                                    <div className="flex flex-col">
+                                                                        <span className="text-gray-600 text-[10px] uppercase">Rank</span>
+                                                                        <span className={`font-mono font-bold ${res.rank_position ? 'text-white' : 'text-gray-600'}`}>{res.rank_position ? `#${res.rank_position}` : 'N/A'}</span>
+                                                                    </div>
+                                                                    <div className="flex flex-col">
+                                                                        <span className="text-gray-600 text-[10px] uppercase">Sentiment</span>
+                                                                        <span className={`font-bold ${res.sentiment_score > 0 ? 'text-green-400' : res.sentiment_score < 0 ? 'text-red-400' : 'text-gray-400'}`}>
+                                                                            {Math.round(res.sentiment_score * 100)}%
+                                                                        </span>
+                                                                    </div>
+                                                                </div>
+
+                                                                <span className={`flex items-center gap-1 text-[10px] font-bold uppercase tracking-wider transition-opacity ${isCompetitor ? 'text-red-400/70 hover:text-red-400' : 'text-brand-yellow/70 hover:text-brand-yellow'}`}>
+                                                                    Inspect <ChevronRight size={10} />
+                                                                </span>
                                                             </div>
                                                         </div>
                                                     );
@@ -586,20 +714,47 @@ export default function ScanPage() {
                             <p className="text-gray-400 text-lg leading-relaxed">
                                 Our Neural Scan Engine will query your selected AI models with various "intent-based" prompts (e.g. "Best Fintech APIs", "Top Insurance Providers") to see if your brand appears in their recommended set.
                             </p>
-                            <div className="space-y-4">
-                                <div className="flex items-center gap-4 bg-[#111] p-4 rounded-xl border border-white/5">
-                                    <div className="w-10 h-10 rounded-full bg-blue-500/20 flex items-center justify-center text-blue-400"><Search size={20} /></div>
-                                    <div>
-                                        <div className="font-bold text-white">Discovery Prompts</div>
-                                        <div className="text-sm text-gray-500">"Who are the top players in..."</div>
+                            <div className="space-y-6 bg-white/5 backdrop-blur-lg p-8 rounded-2xl border border-white/10 shadow-2xl relative overflow-hidden group">
+                                <div className="absolute top-0 right-0 p-12 bg-brand-yellow/5 rounded-full blur-3xl -mr-10 -mt-10 pointer-events-none group-hover:bg-brand-yellow/10 transition-all duration-700"></div>
+                                <div>
+                                    <label className="block text-sm font-bold text-gray-400 mb-2">Base Search Intent (Optional)</label>
+                                    <textarea
+                                        className="w-full bg-black/50 border border-white/10 rounded-xl p-4 text-white placeholder-gray-600 focus:outline-none focus:border-brand-yellow/50 transition-colors resize-none h-24"
+                                        placeholder="E.g. 'What are the best AI tools for marketing?' (Leave empty for auto-generated broad scans)"
+                                        value={basePrompt}
+                                        onChange={(e) => setBasePrompt(e.target.value)}
+                                    />
+                                    <p className="text-xs text-gray-500 mt-2">
+                                        We will generate variations of this prompt to test different user phrasings.
+                                    </p>
+                                </div>
+
+                                <div>
+                                    <label className="block text-sm font-bold text-gray-400 mb-2">Scan Depth</label>
+                                    <div className="flex items-center gap-4">
+                                        <div className="flex items-center bg-black/50 border border-white/10 rounded-lg p-1">
+                                            {[1, 3, 5, 10].map(n => (
+                                                <button
+                                                    key={n}
+                                                    onClick={() => setVariationCount(n)}
+                                                    className={`px-4 py-2 rounded-md text-sm font-bold transition-all ${variationCount === n ? 'bg-brand-yellow text-black' : 'text-gray-400 hover:text-white'}`}
+                                                >
+                                                    {n}
+                                                </button>
+                                            ))}
+                                        </div>
+                                        <span className="text-sm text-gray-500">variations per model</span>
                                     </div>
                                 </div>
-                                <div className="flex items-center gap-4 bg-[#111] p-4 rounded-xl border border-white/5">
-                                    <div className="w-10 h-10 rounded-full bg-purple-500/20 flex items-center justify-center text-purple-400"><Target size={20} /></div>
-                                    <div>
-                                        <div className="font-bold text-white">Direct Comparisons</div>
-                                        <div className="text-sm text-gray-500">"Compare X vs Y vs YourBrand..."</div>
+
+                                <div className="pt-4 border-t border-white/5 flex items-center justify-between">
+                                    <div className="text-sm">
+                                        <div className="text-gray-400">Estimated Cost</div>
+                                        <div className="text-white font-bold text-lg">
+                                            ${(selectedModelsData.length * variationCount * (includeCompetitors ? 2 : 1) * 0.05).toFixed(2)}
+                                        </div>
                                     </div>
+                                    {/* Warnings could go here */}
                                 </div>
                             </div>
                             <Button

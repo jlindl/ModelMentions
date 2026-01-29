@@ -3,7 +3,7 @@
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useEffect, useState } from 'react';
-import { LayoutDashboard, MessageSquare, History, Settings, LogOut, Loader2, BarChart3, Search, User, Zap, Swords, Shield } from 'lucide-react';
+import { LayoutDashboard, MessageSquare, History, Settings, LogOut, Loader2, BarChart3, Search, User, Zap, Swords, Shield, HelpCircle } from 'lucide-react';
 import { createClient } from '../utils/supabase/client';
 import { useRouter } from 'next/navigation';
 import { Skeleton } from '../components/Skeleton';
@@ -70,6 +70,7 @@ export default function DashboardLayout({
         { name: 'New Scan', href: '/dashboard/scan', icon: Search },
         { name: 'History', href: '/dashboard/history', icon: History },
         { name: 'Reports', href: '/dashboard/reports', icon: BarChart3 },
+        { name: 'Help & Support', href: '/dashboard/help', icon: HelpCircle },
         { name: 'Settings', href: '/dashboard/settings', icon: Settings },
     ];
 
